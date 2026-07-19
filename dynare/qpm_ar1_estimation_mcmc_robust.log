@@ -1,0 +1,108 @@
+Starting Dynare (version 7.1).
+Calling Dynare with arguments: none
+Preprocessing time: 0h00m00s.
+
+STEADY-STATE RESULTS:
+
+L_GDP_RW_GAP 		 0
+RS_RW        		 0
+D4L_CPI_RW   		 0
+
+EIGENVALUES:
+         Modulus             Real        Imaginary
+             0.8              0.8                0
+             0.8              0.8                0
+             0.8              0.8                0
+
+There are 0 eigenvalue(s) larger than 1 in modulus for 0 forward-looking variable(s).
+The order and rank conditions are verified.
+
+
+You did not declare endogenous variables after the estimation/calib_smoother command.
+Posterior IRFs will be computed for the 3 endogenous variables
+of your model, this can take a long time ....
+[](0x0)
+
+
+Choose one of the following options:
+
+ [1] Consider all the endogenous variables.
+ [2] Consider all the observed endogenous variables.
+ [3] Stop Dynare and change the mod file.
+ [4] Consider all the endogenous and auxiliary variables.
+
+options [default is 1] =  1
+
+
+Initial value of the log posterior (or likelihood): -251.6714
+
+RESULTS FROM POSTERIOR ESTIMATION
+parameters
+               prior mean     mode    s.d.  prior pstdev
+
+rho_rw             0.8000   0.8712  0.0408   beta 0.1000 
+rho_rs_rw          0.8000   0.9567  0.0175   beta 0.1000 
+rho_cpi_rw         0.8000   0.8618  0.0421   beta 0.1000 
+
+standard deviation of shocks
+               prior mean     mode    s.d.  prior pstdev
+
+eps_gdp            1.0000   0.5552  0.0393   invg 2.0000 
+eps_rs             0.5000   0.4083  0.0289   invg 2.0000 
+eps_cpi            1.0000   0.8077  0.0568   invg 2.0000 
+
+
+Log data density [Laplace approximation] is -266.228128.
+
+Estimation::mcmc: Multiple chains mode.
+Estimation::mcmc: Searching for initial values...
+Estimation::mcmc: Initial values found!
+
+Estimation::mcmc: Write details about the MCMC... Ok!
+Estimation::mcmc: Details about the MCMC are available in qpm_ar1_estimation_mcmc_robust/metropolis\qpm_ar1_estimation_mcmc_robust_mh_history_0.mat
+
+
+Estimation::mcmc: Number of mh files: 1 per block.
+Estimation::mcmc: Total number of generated files: 2.
+Estimation::mcmc: Total number of iterations: 20000.
+Estimation::mcmc: Current acceptance ratio per chain:
+                                                       Chain  1: 63.765%
+                                                       Chain  2: 63.585%
+Estimation::mcmc: Total number of MH draws per chain: 20000.
+Estimation::mcmc: Total number of generated MH files: 1.
+Estimation::mcmc: I'll use mh-files 1 to 1.
+Estimation::mcmc: In MH-file number 1 I'll start at line 10001.
+Estimation::mcmc: Finally I keep 10000 draws per chain.
+
+
+
+MCMC Inefficiency factors per block
+Parameter        Block 1     Block 2
+SE_eps_gdp        65.620      18.055
+SE_eps_rs         44.154      41.286
+SE_eps_cpi        39.853      47.089
+rho_rw            48.947      34.026
+rho_rs_rw         49.923      48.348
+rho_cpi_rw        53.942      32.224
+
+
+
+Convergence diagnostics results for chain 1.
+
+Geweke (1992) Convergence Tests, based on means of draws 10000 to 12000 vs 15000 to 20000 for chain 1.
+p-values are for Chi2-test for equality of means.
+Parameter          Post. Mean        Post. Std   p-val No Taper   p-val 4% Taper   p-val 8% Taper  p-val 15% Taper
+SE_eps_gdp              0.565            0.042            0.000            0.004            0.009            0.020
+SE_eps_rs               0.416            0.030            0.073            0.775            0.791            0.799
+SE_eps_cpi              0.814            0.056            0.810            0.962            0.965            0.965
+rho_rw                  0.866            0.040            0.000            0.077            0.097            0.096
+rho_rs_rw               0.953            0.017            0.449            0.886            0.887            0.890
+rho_cpi_rw              0.857            0.041            0.048            0.722            0.752            0.780
+
+
+
+
+Convergence diagnostics results for chain 2.
+
+Geweke (1992) Convergence Tests, based on means of draws 10000 to 12000 vs 15000 to 20000 for chain 2.
+p-values are for Chi2-test for equality of means.

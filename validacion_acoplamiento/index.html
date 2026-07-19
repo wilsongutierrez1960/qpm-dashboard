@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Validación de acoplamiento QPM (local)</title>
+<style>
+  body { font-family: Segoe UI, Arial, sans-serif; background:#0e1116; color:#e7ecf2; margin:0; padding:24px; }
+  h2 { margin-top:0; }
+  .sub { color:#8a96a3; font-size:13px; margin-top:-6px; }
+  .controls { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin:20px 0; }
+  .controls label { display:block; font-size:13px; color:#8a96a3; margin-bottom:4px; }
+  select, input[type=range] { width:100%; }
+  .panel { border-radius:8px; padding:16px 18px; margin-bottom:18px; }
+  .pass { background:#0f2e1f; }
+  .fail { background:#2e1414; }
+  .panel p { margin:4px 0; }
+  .panel .title { font-weight:600; font-size:15px; }
+  .pass .title { color:#5fd98a; }
+  .fail .title { color:#f08080; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; margin-top:6px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:24px; }
+  th, td { padding:6px 8px; text-align:right; border-bottom:1px solid #232a33; }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:#8a96a3; font-weight:500; }
+  .mono { font-family: Consolas, monospace; }
+  .grid-charts { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap:12px; }
+  .chart-box { background:#161b22; border-radius:8px; padding:10px; }
+  .chart-label { font-size:13px; color:#8a96a3; margin:0 0 4px; }
+  .footer-note { font-size:12px; color:#6b7684; margin-top:24px; }
+  svg.line { width:100%; height:140px; display:block; }
+</style>
+</head>
+<body>
+
+<h2>Validación de acoplamiento QPM</h2>
+<p class="sub">Stacked-time / Gauss-Seidel · bloque externo activo (AR(1), canal b3) · UIP sobre L_S nominal · versión local sin dependencias de red</p>
+
+<div class="controls">
+  <div>
+    <label for="shockType">Tipo de shock</label>
+    <select id="shockType"></select>
+  </div>
+  <div>
+    <label>Magnitud del shock: <span id="shockSizeOut"></span></label>
+    <input type="range" id="shockSize" min="-3" max="3" step="0.1" value="1.0">
+  </div>
+  <div>
+    <label>ρ persistencia externa: <span id="rhoOut"></span></label>
+    <input type="range" id="rho" min="0" max="0.95" step="0.05" value="0.8">
+  </div>
+  <div>
+    <label>Horizonte: <span id="horizonOut"></span> trim.</label>
+    <input type="range" id="horizon" min="20" max="60" step="4" value="40">
+  </div>
+  <div>
+    <label>Ventana de gráficos: <span id="windowOut"></span> trim.</label>
+    <input type="range" id="windowSize" min="8" max="60" step="4" value="16">
+  </div>
+</div>
+
+<div id="panel" class="panel"></div>
+<p class="footer-note" id="r2note"></p>
+
+<h3>Cadena de transmisión, primeros 8 trimestres</h3>
+<table id="chainTable"></table>
+
+<h3>IRFs por variable</h3>
+<div class="grid-charts" id="charts"></div>
+
+<p class="footer-note">
+  Calibración: b1=0.8 b2=0.3 b3=0.5 b4=0.7 · a1=0.7 a2=0.2 a3=0.7 · g1=0.7 g2=0.5 g3=0.5 · e1=0.4.
+  Esta página corre 100% en el navegador, sin llamadas de red ni dependencias externas.
+</p>
+
+<script>
+const CALIB = { b1:0.8,b2:0.3,b3:0.5,b4:0.7, a1:0.7,a2:0.2,a3:0.7, g1:0.7,g2:0.5,g3:0.5, e1:0.4 };
+
+const SHOCK_OPTIONS = [
+  { value:"demanda", label:"Demanda doméstica", eq:"IS curve (SHK_L_GDP_GAP)", group:"Doméstico" },
+  { value:"precios", label:"Precios domésticos", eq:"Phillips curve (SHK_DLA_CPI)", group:"Doméstico" },
+  { value:"politica_monetaria", label:"Política monetaria", eq:"Taylor rule (SHK_RS)", group:"Doméstico" },
+  { value:"tipo_cambio", label:"Premio de riesgo / tipo de cambio", eq:"UIP (PREMIO_RIESGO)", group:"Doméstico" },
+  { value:"demanda_externa", label:"Demanda externa (canal b3)", eq:"AR(1) L_GDP_RW_GAP → IS vía b3", group:"Externo" },
+  { value:"tasa_externa", label:"Tasa de interés externa", eq:"AR(1) RS_RW → UIP (diferencial)", group:"Externo" },
+  { value:"precios_externos", label:"Precios externos (RW)", eq:"AR(1) D4L_CPI_RW → L_Z vía L_CPI_RW", group:"Externo" },
+  { value:"rw_combinado", label:"RW combinado (3 series simultáneas)", eq:"AR(1) en las 3 series RW a la vez", group:"Externo" },
+];
+
+function arForward(rho, shockArr) {
+  const n = shockArr.length;
+  const x = new Array(n).fill(0);
+  for (let t=0;t<n;t++) { const lag = t===0?0:x[t-1]; x[t] = rho*lag + shockArr[t]; }
+  return x;
+}
+
+function solveQPM({ shockType, shockSize, timingQuarter, horizon, rho, calib, tol=1e-7, maxIter=1000 }) {
+  const { b1,b2,b3,b4,a1,a2,a3,g1,g2,g3,e1 } = calib;
+  const n = horizon+1;
+  const SHK_GDP=new Array(n).fill(0), SHK_DLA=new Array(n).fill(0), SHK_RS=new Array(n).fill(0), PREMIO=new Array(n).fill(0);
+  const SHK_GDP_RW=new Array(n).fill(0), SHK_RS_RW=new Array(n).fill(0), SHK_CPI_RW=new Array(n).fill(0);
+  const t0 = Math.min(timingQuarter, n-1);
+  if (shockType==="demanda") SHK_GDP[t0]=shockSize;
+  if (shockType==="precios") SHK_DLA[t0]=shockSize;
+  if (shockType==="politica_monetaria") SHK_RS[t0]=shockSize;
+  if (shockType==="tipo_cambio") PREMIO[t0]=shockSize;
+  if (shockType==="demanda_externa") SHK_GDP_RW[t0]=shockSize;
+  if (shockType==="tasa_externa") SHK_RS_RW[t0]=shockSize;
+  if (shockType==="precios_externos") SHK_CPI_RW[t0]=shockSize;
+  if (shockType==="rw_combinado") { SHK_GDP_RW[t0]=shockSize; SHK_RS_RW[t0]=shockSize; SHK_CPI_RW[t0]=shockSize; }
+
+  const L_GDP_RW_GAP = arForward(rho, SHK_GDP_RW);
+  const RS_RW = arForward(rho, SHK_RS_RW);
+  const D4L_CPI_RW = arForward(rho, SHK_CPI_RW);
+
+  const L_GDP_GAP=new Array(n).fill(0), DLA_CPI=new Array(n).fill(0), D4L_CPI=new Array(n).fill(0);
+  const RS=new Array(n).fill(0), L_S=new Array(n).fill(0), L_CPI=new Array(n).fill(0), L_CPI_RW=new Array(n).fill(0);
+  const RR=new Array(n).fill(0), L_Z=new Array(n).fill(0), L_Z_GAP=new Array(n).fill(0), MCI=new Array(n).fill(0), RMC=new Array(n).fill(0);
+
+  let iter=0, maxDiff=Infinity;
+  while (maxDiff>tol && iter<maxIter) {
+    maxDiff=0;
+    for (let t=0;t<n;t++) {
+      const lagGDP = t===0?0:L_GDP_GAP[t-1];
+      const lagDLA = t===0?0:DLA_CPI[t-1];
+      const leadDLA = t===n-1?0:DLA_CPI[t+1];
+      const lagRS = t===0?0:RS[t-1];
+      const leadLS = t===n-1?0:L_S[t+1];
+      const lagLCPI = t===0?0:L_CPI[t-1];
+      const lagLCPIRW = t===0?0:L_CPI_RW[t-1];
+      const leadD4LCPI = t===n-1?0:D4L_CPI[t+1];
+
+      const newLCPI = lagLCPI + DLA_CPI[t]/4;
+      const newLCPIRW = lagLCPIRW + D4L_CPI_RW[t]/4;
+      const LZ = L_S[t] - newLCPI + newLCPIRW;
+      const LZGAP = LZ;
+      const newRMC = a3*L_GDP_GAP[t] + (1-a3)*LZGAP;
+      const newDLA = a1*lagDLA + (1-a1)*leadDLA + a2*newRMC + SHK_DLA[t];
+      const d4lCpiLag4 = t>=4 ? L_CPI[t-4] : 0;
+      const newD4LCPI = newLCPI - d4lCpiLag4;
+      const newRR = RS[t] - leadD4LCPI;
+      const newMCI = b4*newRR + (1-b4)*(-LZGAP);
+      const newGDP = b1*lagGDP - b2*newMCI + b3*L_GDP_RW_GAP[t] + SHK_GDP[t];
+      const newRS = g1*lagRS + (1-g1)*(0 + g2*(newD4LCPI-0) + g3*newGDP) + SHK_RS[t];
+      const newLS = leadLS - (newRS - RS_RW[t])/4 + e1*PREMIO[t];
+
+      maxDiff = Math.max(maxDiff, Math.abs(newGDP-L_GDP_GAP[t]), Math.abs(newDLA-DLA_CPI[t]), Math.abs(newRS-RS[t]), Math.abs(newLS-L_S[t]));
+
+      L_CPI[t]=newLCPI; L_CPI_RW[t]=newLCPIRW; L_Z[t]=LZ; L_Z_GAP[t]=LZGAP; RMC[t]=newRMC;
+      DLA_CPI[t]=newDLA; D4L_CPI[t]=newD4LCPI; RR[t]=newRR; MCI[t]=newMCI; L_GDP_GAP[t]=newGDP; RS[t]=newRS; L_S[t]=newLS;
+    }
+    iter++;
+  }
+
+  const data = [];
+  for (let t=0;t<n;t++) {
+    data.push({ t, L_GDP_GAP:L_GDP_GAP[t], DLA_CPI:DLA_CPI[t], D4L_CPI:D4L_CPI[t], RS:RS[t], L_S:L_S[t], L_Z:L_Z[t],
+      MCI:MCI[t], RMC:RMC[t], RR:RR[t], L_GDP_RW_GAP:L_GDP_RW_GAP[t], RS_RW:RS_RW[t], D4L_CPI_RW:D4L_CPI_RW[t] });
+  }
+  return { data, iterations: iter, maxDiff };
+}
+
+function erf(x){ const sign=x<0?-1:1; const ax=Math.abs(x);
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const t=1/(1+p*ax); const y=1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-ax*ax); return sign*y; }
+function normCdf(x){ return 0.5*(1+erf(x/Math.sqrt(2))); }
+
+function validateCoupling(data) {
+  const eps=1e-4;
+  const maxAbsLS = Math.max(...data.map(d=>Math.abs(d.L_S)));
+  const maxAbsMCI = Math.max(...data.map(d=>Math.abs(d.MCI)));
+  const maxAbsRW = Math.max(...data.map(d=>Math.abs(d.L_GDP_RW_GAP)));
+  const lsResponds = maxAbsLS>eps, mciResponds = maxAbsMCI>eps;
+
+  let num=0, denA=0, denB=0; const n=data.length-1;
+  for (let t=0;t<n;t++){ const mci=data[t].MCI, gdpNext=data[t+1].L_GDP_GAP; num+=mci*gdpNext; denA+=mci*mci; denB+=gdpNext*gdpNext; }
+  const r = (denA>0 && denB>0) ? num/Math.sqrt(denA*denB) : 0;
+  let pValue=1;
+  if (n>3 && Math.abs(r)<1) { const z=Math.atanh(r)*Math.sqrt(n-3); pValue = 2*(1-normCdf(Math.abs(z))); }
+  const significant = pValue<0.05, correctSign = r<-0.02, r2=r*r;
+  const pass = lsResponds && mciResponds && significant && correctSign;
+  return { pass, lsResponds, mciResponds, maxAbsLS, maxAbsMCI, maxAbsRW, r, pValue, significant, correctSign, r2, n };
+}
+
+function round(v,d=3){ const f=Math.pow(10,d); return Math.round((v+Number.EPSILON)*f)/f; }
+function fmtP(p){ return p<0.0001 ? "< 0.0001" : round(p,4); }
+
+const SERIES = [
+  { key:"L_GDP_GAP", label:"Brecha de producto", color:"#5b9bd5" },
+  { key:"L_S", label:"Tipo de cambio nominal", color:"#5dcaa5" },
+  { key:"MCI", label:"MCI (condiciones monetarias)", color:"#e0825a" },
+  { key:"RS", label:"Tasa de política", color:"#9a8ee0" },
+  { key:"DLA_CPI", label:"Inflación trimestral anualizada", color:"#e07ba0" },
+  { key:"D4L_CPI", label:"Inflación interanual", color:"#d2a23a" },
+  { key:"RR", label:"Tasa real (Fisher)", color:"#a3a3a3" },
+  { key:"L_Z", label:"Tipo de cambio real", color:"#8fc24a" },
+  { key:"L_GDP_RW_GAP", label:"Brecha de producto RW (externo)", color:"#3f7fc1" },
+  { key:"RS_RW", label:"Tasa de interés RW (externo)", color:"#c1547e" },
+];
+
+function makeSVGLine(data, key, color) {
+  const w=400, h=140, padL=34, padR=8, padT=8, padB=18;
+  const vals = data.map(d=>d[key]);
+  let min = Math.min(...vals, 0), max = Math.max(...vals, 0);
+  if (min===max) { min-=1; max+=1; }
+  const x = i => padL + (i/(data.length-1)) * (w-padL-padR);
+  const y = v => padT + (1 - (v-min)/(max-min)) * (h-padT-padB);
+  const points = vals.map((v,i)=>`${x(i)},${y(v)}`).join(" ");
+  const zeroY = y(0);
+  const ticks = [max, (max+min)/2, min].map(v=>round(v,3));
+  return `<svg class="line" viewBox="0 0 ${w} ${h}">
+    <line x1="${padL}" y1="${zeroY}" x2="${w-padR}" y2="${zeroY}" stroke="#3a4250" stroke-width="1"/>
+    <text x="2" y="${padT+8}" fill="#6b7684" font-size="10">${ticks[0]}</text>
+    <text x="2" y="${zeroY+3}" fill="#6b7684" font-size="10">${ticks[1]}</text>
+    <text x="2" y="${h-padB+2}" fill="#6b7684" font-size="10">${ticks[2]}</text>
+    <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2"/>
+  </svg>`;
+}
+
+const $ = id => document.getElementById(id);
+const state = { shockType:"demanda_externa", shockSize:1.0, rho:0.8, horizon:40, windowSize:16 };
+
+function populateSelect() {
+  const sel = $("shockType");
+  const groups = { "Doméstico":[], "Externo":[] };
+  SHOCK_OPTIONS.forEach(o=>groups[o.group].push(o));
+  Object.entries(groups).forEach(([g,opts])=>{
+    const og = document.createElement("optgroup"); og.label = g;
+    opts.forEach(o=>{ const opt=document.createElement("option"); opt.value=o.value; opt.textContent=o.label; og.appendChild(opt); });
+    sel.appendChild(og);
+  });
+  sel.value = state.shockType;
+}
+
+function render() {
+  const result = solveQPM({ shockType:state.shockType, shockSize:state.shockSize, timingQuarter:0, horizon:state.horizon, rho:state.rho, calib:CALIB });
+  const validation = validateCoupling(result.data);
+  const isExternal = SHOCK_OPTIONS.find(o=>o.value===state.shockType).group === "Externo";
+  const shockMeta = SHOCK_OPTIONS.find(o=>o.value===state.shockType);
+  const windowed = result.data.slice(0, Math.min(state.windowSize, result.data.length));
+
+  $("panel").className = "panel " + (validation.pass ? "pass" : "fail");
+  $("panel").innerHTML = `
+    <p class="title">${validation.pass ? "Acoplamiento validado" : "Acoplamiento no se observa (o no es estadísticamente robusto)"}</p>
+    <p>Shock: ${shockMeta.label} (${shockMeta.eq}) · convergencia en ${result.iterations} iteraciones, max|Δ| = ${result.maxDiff.toExponential(2)}</p>
+    <div class="row">
+      <span>max|L_S| = ${round(validation.maxAbsLS,4)} ${validation.lsResponds?"✓":"✗"}</span>
+      <span>max|MCI| = ${round(validation.maxAbsMCI,4)} ${validation.mciResponds?"✓":"✗"}</span>
+      ${isExternal ? `<span>max|L_GDP_RW_GAP| = ${round(validation.maxAbsRW,4)}</span>` : ""}
+    </div>
+    <div class="row">
+      <span>r = corr(MCI_t, L_GDP_GAP_t+1) = ${round(validation.r,3)}</span>
+      <span>signo esperado (−): ${validation.correctSign?"✓":"✗"}</span>
+      <span>p-valor (Fisher z, n=${validation.n}) = ${fmtP(validation.pValue)} ${validation.significant?"✓":"✗"}</span>
+      <span>R² (proxy, no FEVD) = ${round(validation.r2,3)}</span>
+    </div>`;
+  $("r2note").textContent = "Nota: el R² es la varianza compartida a lo largo de un único IRF determinístico, no un FEVD estructural. El p-valor usa Fisher z con aproximación normal asintótica.";
+
+  const chainRows = result.data.slice(0,9);
+  let tableHtml = `<thead><tr><th>t</th>${isExternal?'<th>L_GDP_RW_GAP</th>':''}<th>L_GDP_GAP</th><th>L_S</th><th>MCI</th><th>L_GDP_GAP(t+1)</th></tr></thead><tbody>`;
+  chainRows.forEach((row,i)=>{
+    tableHtml += `<tr><td>${row.t}</td>${isExternal?`<td class="mono">${round(row.L_GDP_RW_GAP,4)}</td>`:''}<td class="mono">${round(row.L_GDP_GAP,4)}</td><td class="mono">${round(row.L_S,4)}</td><td class="mono">${round(row.MCI,4)}</td><td class="mono">${i+1<result.data.length?round(result.data[i+1].L_GDP_GAP,4):"—"}</td></tr>`;
+  });
+  tableHtml += "</tbody>";
+  $("chainTable").innerHTML = tableHtml;
+
+  const seriesToShow = SERIES.filter(s => isExternal || (s.key!=="L_GDP_RW_GAP" && s.key!=="RS_RW"));
+  $("charts").innerHTML = seriesToShow.map(s => `
+    <div class="chart-box">
+      <p class="chart-label">${s.label}</p>
+      ${makeSVGLine(windowed, s.key, s.color)}
+    </div>`).join("");
+}
+
+populateSelect();
+$("shockType").addEventListener("change", e => { state.shockType = e.target.value; render(); });
+$("shockSize").addEventListener("input", e => { state.shockSize = parseFloat(e.target.value); $("shockSizeOut").textContent = round(state.shockSize,1); render(); });
+$("rho").addEventListener("input", e => { state.rho = parseFloat(e.target.value); $("rhoOut").textContent = round(state.rho,2); render(); });
+$("horizon").addEventListener("input", e => { state.horizon = parseInt(e.target.value); $("horizonOut").textContent = state.horizon; render(); });
+$("windowSize").addEventListener("input", e => { state.windowSize = parseInt(e.target.value); $("windowOut").textContent = state.windowSize; render(); });
+
+$("shockSizeOut").textContent = state.shockSize;
+$("rhoOut").textContent = state.rho;
+$("horizonOut").textContent = state.horizon;
+$("windowOut").textContent = state.windowSize;
+$("shockSize").value = state.shockSize;
+$("rho").value = state.rho;
+$("horizon").value = state.horizon;
+$("windowSize").value = state.windowSize;
+
+render();
+</script>
+</body>
+</html>

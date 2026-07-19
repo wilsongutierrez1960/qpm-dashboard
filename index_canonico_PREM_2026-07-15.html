@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<!-- saved from url=(0022)http://localhost:8765/ -->
+<html lang="es"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>QPM — Diagnóstico de Política Monetaria (local)</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: Segoe UI, Arial, sans-serif; background:#0e1116; color:#e7ecf2; margin:0; padding:0; }
+.app { max-width:1200px; margin:0 auto; padding:20px 24px; }
+h2 { margin-top:0; font-size:20px; }
+h3 { font-size:15px; font-weight:600; margin:1rem 0 0.5rem; }
+.sub { color:#8a96a3; font-size:13px; margin-top:-6px; margin-bottom:16px; }
+
+/* Tabs */
+.tabs { display:flex; gap:4px; border-bottom:1px solid #232a33; margin-bottom:20px; }
+.tab { padding:8px 18px; cursor:pointer; font-size:13px; border-radius:6px 6px 0 0;
+       border:1px solid transparent; border-bottom:none; color:#8a96a3; background:none; }
+.tab.active { background:#161b22; border-color:#232a33; color:#e7ecf2; font-weight:600; }
+
+/* Controls */
+.controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin:12px 0; }
+.controls label, .ctrl-label { display:block; font-size:12px; color:#8a96a3; margin-bottom:3px; }
+select, input[type=range], input[type=text], input[type=password], input[type=date] {
+  width:100%; font-size:12px; background:#161b22; color:#e7ecf2;
+  border:1px solid #2a3040; border-radius:4px; padding:4px 6px; }
+input[type=range] { padding:0; }
+button { font-size:12px; padding:6px 14px; border-radius:4px; cursor:pointer;
+         border:1px solid #2a3040; background:#1e2530; color:#e7ecf2; }
+button.primary { background:#1a5fb4; border-color:#1a5fb4; color:#fff; font-weight:600; }
+button:disabled { opacity:0.5; cursor:wait; }
+
+/* Panels */
+.card { background:#161b22; border-radius:8px; padding:12px 14px; margin-bottom:12px; }
+.pass-panel { background:#0f2e1f; border-radius:8px; padding:14px 16px; margin-bottom:12px; }
+.fail-panel { background:#2e1414; border-radius:8px; padding:14px 16px; margin-bottom:12px; }
+.err-panel  { background:#2e1414; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#f08080; }
+.info-panel { background:#161b22; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#8a96a3; }
+
+table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px; }
+th,td { padding:5px 7px; border-bottom:1px solid #232a33; }
+th { text-align:right; color:#8a96a3; font-weight:500; }
+th:first-child,td:first-child { text-align:left; }
+td { text-align:right; }
+.mono { font-family:Consolas,monospace; }
+
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; }
+.grid4 { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+
+.stat-row { display:flex; justify-content:space-between; font-size:12px; padding:2px 0; }
+.stat-row span:first-child { color:#8a96a3; }
+.stat-row span:last-child  { font-family:Consolas,monospace; }
+
+.badge { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+.foot  { font-size:11px; color:#6b7684; margin-top:20px; }
+
+/* Semáforo */
+.semafor-green  { color:#3a9e6a; }
+.semafor-yellow { color:#c8932a; }
+.semafor-red    { color:#c0392b; }
+
+/* Código */
+.code-box { font-family:Consolas,monospace; font-size:12px; background:#0a0d12;
+            border-radius:6px; padding:8px 12px; margin:6px 0; line-height:1.6; }
+
+/* Charts via SVG */
+svg.chart { width:100%; display:block; }
+</style>
+</head>
+<body>
+<div class="app">
+
+<h2>QPM — Diagnóstico de Política Monetaria</h2>
+<p class="sub">Modelo de economía pequeña y abierta (Berg-Karam-Laxton / FMI) · solver lineal directo · bloque externo activo · UIP sobre L_S nominal</p>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab(&#39;diagnostico&#39;)">Diagnóstico de política</button>
+  <button class="tab" onclick="switchTab(&#39;fred&#39;)">Carga FRED (datos reales)</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     PESTAÑA 1: DIAGNÓSTICO
+     ═══════════════════════════════════════════════════════ -->
+<div id="tab-diagnostico">
+
+<div class="controls">
+  <div>
+    <label for="shockType">Tipo de shock</label>
+    <select id="shockType">
+      <optgroup label="Doméstico">
+        <option value="demanda">Demanda doméstica</option>
+        <option value="precios">Precios domésticos</option>
+        <option value="politica_monetaria">Política monetaria</option>
+        <option value="tipo_cambio">Premio de riesgo / TC</option>
+      </optgroup>
+      <optgroup label="Externo (bloque RW)">
+        <option value="demanda_externa">Demanda externa (canal b3)</option>
+        <option value="tasa_externa" selected="">Tasa de interés externa</option>
+        <option value="precios_externos">Precios externos (RW)</option>
+        <option value="rw_combinado">RW combinado (3 series)</option>
+      </optgroup>
+    </select>
+  </div>
+  <div>
+    <label>Magnitud: <span id="shockSizeLbl">1</span></label>
+    <input type="range" id="shockSize" min="-3" max="3" step="0.1" value="1.0">
+  </div>
+  <div>
+    <label>ρ GDP externo: <span id="rhoGdpLbl">0.87</span></label>
+    <input type="range" id="rhoGdp" min="0" max="0.99" step="0.01" value="0.8670">
+  </div>
+  <div>
+    <label>ρ tasa externa: <span id="rhoRsLbl">0.95</span></label>
+    <input type="range" id="rhoRs" min="0" max="0.99" step="0.01" value="0.9535">
+  </div>
+  <div>
+    <label>ρ CPI externo: <span id="rhoCpiLbl">0.86</span></label>
+    <input type="range" id="rhoCpi" min="0" max="0.99" step="0.01" value="0.8594">
+  </div>
+  <div>
+    <label>ρ PREM (BAA10Y) <span style="color:#c1547e;font-weight:600">provisorio*</span>: <span id="rhoPremLbl">0.80</span></label>
+    <input type="range" id="rhoPrem" min="0" max="0.99" step="0.01" value="0.80">
+  </div>
+  <div>
+    <label>Horizonte: <span id="horizonLbl">40</span> trim.</label>
+    <input type="range" id="horizon" min="20" max="60" step="4" value="40">
+  </div>
+  <div>
+    <label>Ventana: <span id="windowLbl">24</span> trim.</label>
+    <input type="range" id="window" min="8" max="40" step="4" value="20">
+  </div>
+  <div>
+    <label>Banda de sensibilidad en:</label>
+    <select id="bandKey">
+      <option value="b1">b1 — persistencia brecha (IS)</option>
+      <option value="b2">b2 — sensibilidad MCI en IS</option>
+      <option value="b3" selected="">b3 — canal externo en IS</option>
+      <option value="b4">b4 — peso tasa real en MCI</option>
+      <option value="g2">g2 — respuesta inflación (Taylor)</option>
+      <option value="g3">g3 — respuesta brecha (Taylor)</option>
+      <option value="e1">e1 — peso premio riesgo (UIP)</option>
+    </select>
+  </div>
+</div>
+<p class="sub" style="margin-top:-8px">* ρ PREM: default = media del prior (0.80), no todavía media posterior estimada — pendiente de correr <span class="mono">qpm_ar1_estimation.robust.mod</span> extendido con BAA10Y y recuperar <span class="mono">oo_.posterior_mean.parameters</span>. Actualizar este valor apenas esté disponible.</p>
+
+<!-- Semáforo -->
+<h3>Panel de diagnóstico rápido — t=1, 4, 8</h3>
+<table id="semaforTable">
+  <thead><tr><th style="text-align:left">Variable</th><th>Impacto (t=1)</th><th>Mediano (t=4)</th><th>Largo (t=8)</th></tr></thead>
+  <tbody id="semaforBody">
+    <tr>
+      <td style="text-align:left;color:#8a96a3">Inflación vs objetivo</td>
+      <td><span class="semafor-red">● -2.807 <small>Crítico</small></span></td><td><span class="semafor-red">● -2.196 <small>Crítico</small></span></td><td><span class="semafor-red">● -1.799 <small>Crítico</small></span></td>
+    </tr>
+    <tr>
+      <td style="text-align:left;color:#8a96a3">Brecha de producto</td>
+      <td><span class="semafor-green">● 0.288 <small>Normal</small></span></td><td><span class="semafor-yellow">● 0.488 <small>Alerta</small></span></td><td><span class="semafor-yellow">● 0.368 <small>Alerta</small></span></td>
+    </tr>
+    <tr>
+      <td style="text-align:left;color:#8a96a3">Condiciones monetarias</td>
+      <td><span class="semafor-yellow">● -0.522 <small>Alerta</small></span></td><td><span class="semafor-yellow">● -0.422 <small>Alerta</small></span></td><td><span class="semafor-green">● -0.074 <small>Normal</small></span></td>
+    </tr></tbody>
+</table>
+
+<!-- Interpretación automática de política (interpretacionPolitica.js integrado) -->
+<div class="card" id="interpretacionCard" style="margin-top:10px;padding:12px 14px">
+  <div style="font-size:12px;color:#8a96a3;margin-bottom:6px">Interpretación automática — lectura t=0 (impacto inicial del shock elegido)</div>
+  <div id="interpretacionTexto" style="line-height:1.5"></div>
+  <div id="interpretacionDesglose" style="margin-top:8px;font-size:12px;color:#8a96a3"></div>
+</div>
+
+
+<!-- UIP panel -->
+<div class="card" id="uipPanel">
+  <div style="font-weight:600;font-size:14px;margin-bottom:6px">Canal UIP — Uncovered Interest Parity (ecuación k)</div>
+  <div class="code-box">L_S_t = L_S_{t+1} − (RS_t − RS_RW_t) / 4 + e1 · PREMIO_t</div>
+  <div class="code-box" id="uipInstance">t=0: <span style="color:#5dcaa5">1.5248</span> = <span style="color:#5dcaa5">1.2834</span> − (<span style="color:#9a8ee0">0.0346</span> − <span style="color:#c1547e">1</span>) / 4</div>
+  <p style="font-size:12px;color:#8a96a3;margin:8px 0">
+    Canal de transmisión: RS_t ↑ → diferencial (RS − RS_RW) ↑ → L_S_t ↓ (apreciación) → L_Z_t ↓ → MCI_t ↑ (restrictivo)
+  </p>
+  <div class="grid2">
+    <div>
+      <div style="font-size:11px;color:#8a96a3;margin-bottom:3px">Tasas nominales y diferencial RS−RS_RW</div>
+      <svg class="chart" height="150" id="uipChart1" viewBox="0 0 400 150"><line x1="36" y1="70.1" x2="394" y2="70.1" stroke="#2a3040" stroke-width="1"></line>
+    <text x="2" y="14" fill="#6b7684" font-size="9">1</text>
+    <text x="2" y="136" fill="#6b7684" font-size="9">-0.97</text><polyline points="36.0,67.9 51.6,63.9 67.1,58.5 82.7,51.8 98.3,44.9 113.8,38.4 129.4,32.8 145.0,28.6 160.5,26.0 176.1,25.1 191.7,26.0 207.2,28.7 222.8,33.0 238.3,38.9 253.9,46.1 269.5,54.4 285.0,63.4 300.6,73.0 316.2,82.7 331.7,92.2 347.3,101.2 362.9,109.4 378.4,116.5 394.0,122.3" fill="none" stroke="#9a8ee0" stroke-width="1.8" stroke-dasharray=""></polyline><polyline points="36.0,6.0 51.6,18.8 67.1,29.1 82.7,37.3 98.3,43.8 113.8,49.1 129.4,53.3 145.0,56.7 160.5,59.4 176.1,61.5 191.7,63.2 207.2,64.6 222.8,65.7 238.3,66.6 253.9,67.3 269.5,67.9 285.0,68.3 300.6,68.7 316.2,69.0 331.7,69.2 347.3,69.4 362.9,69.5 378.4,69.6 394.0,69.7" fill="none" stroke="#c1547e" stroke-width="1.8" stroke-dasharray=""></polyline><polyline points="36.0,132.0 51.6,115.2 67.1,99.5 82.7,84.6 98.3,71.1 113.8,59.4 129.4,49.6 145.0,42.0 160.5,36.7 176.1,33.7 191.7,32.9 207.2,34.2 222.8,37.4 238.3,42.4 253.9,48.9 269.5,56.6 285.0,65.2 300.6,74.4 316.2,83.8 331.7,93.1 347.3,101.9 362.9,110.0 378.4,117.0 394.0,122.7" fill="none" stroke="#e0c050" stroke-width="1.8" stroke-dasharray="4 2"></polyline></svg>
+    </div>
+    <div>
+      <div style="font-size:11px;color:#8a96a3;margin-bottom:3px">TC nominal L_S y TC real L_Z_GAP</div>
+      <svg class="chart" height="150" id="uipChart2" viewBox="0 0 400 150"><line x1="36" y1="86.2" x2="394" y2="86.2" stroke="#2a3040" stroke-width="1"></line>
+    <text x="2" y="14" fill="#6b7684" font-size="9">2.11</text>
+    <text x="2" y="136" fill="#6b7684" font-size="9">-1.21</text><polyline points="36.0,28.3 51.6,37.4 67.1,44.1 82.7,48.5 98.3,50.6 113.8,50.8 129.4,49.2 145.0,46.1 160.5,42.0 176.1,37.0 191.7,31.6 207.2,26.1 222.8,20.8 238.3,16.0 253.9,11.9 269.5,8.7 285.0,6.7 300.6,6.0 316.2,6.6 331.7,8.7 347.3,12.1 362.9,16.8 378.4,22.7 394.0,29.6" fill="none" stroke="#5dcaa5" stroke-width="1.8" stroke-dasharray=""></polyline><polyline points="36.0,30.8 51.6,44.8 67.1,58.4 82.7,71.4 98.3,83.7 113.8,94.9 129.4,104.9 145.0,113.5 160.5,120.6 176.1,126.1 191.7,129.8 207.2,131.8 222.8,132.0 238.3,130.5 253.9,127.3 269.5,122.7 285.0,116.7 300.6,109.5 316.2,101.5 331.7,92.9 347.3,83.9 362.9,74.9 378.4,66.1 394.0,57.9" fill="none" stroke="#8fc24a" stroke-width="1.8" stroke-dasharray="4 2"></polyline></svg>
+    </div>
+  </div>
+</div>
+
+<!-- IRFs con bandas -->
+<h3 id="irfTitle">IRFs con bandas de sensibilidad (±0.15 en b3)</h3>
+<div class="grid4" id="irfGrid">
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Brecha de producto</div>
+      <svg class="chart" height="140" id="irf_L_GDP_GAP" viewBox="0 0 300 140"><line x1="36" y1="57.2" x2="294" y2="57.2" stroke="#2a3040" stroke-width="1"></line>
+    <text x="2" y="14" fill="#6b7684" font-size="9">0.5</text>
+    <text x="2" y="126" fill="#6b7684" font-size="9">-0.63</text><polyline points="36.0,40.2 47.2,27.4 58.4,17.4 69.7,10.5 80.9,6.7 92.1,6.0 103.3,8.1 114.5,12.6 125.7,19.2 137.0,27.6 148.2,37.2 159.4,47.8 170.6,58.9 181.8,70.1 193.0,81.0 204.3,91.2 215.5,100.4 226.7,108.3 237.9,114.5 249.1,119.0 260.3,121.5 271.6,122.0 282.8,120.4 294.0,116.8" fill="none" stroke="#378ADD" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,40.2 47.2,27.4 58.4,17.4 69.7,10.5 80.9,6.7 92.1,6.0 103.3,8.1 114.5,12.6 125.7,19.2 137.0,27.6 148.2,37.2 159.4,47.8 170.6,58.9 181.8,70.1 193.0,81.0 204.3,91.2 215.5,100.4 226.7,108.3 237.9,114.5 249.1,119.0 260.3,121.5 271.6,122.0 282.8,120.4 294.0,116.8" fill="none" stroke="#378ADD" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,40.2 47.2,27.4 58.4,17.4 69.7,10.5 80.9,6.7 92.1,6.0 103.3,8.1 114.5,12.6 125.7,19.2 137.0,27.6 148.2,37.2 159.4,47.8 170.6,58.9 181.8,70.1 193.0,81.0 204.3,91.2 215.5,100.4 226.7,108.3 237.9,114.5 249.1,119.0 260.3,121.5 271.6,122.0 282.8,120.4 294.0,116.8" fill="none" stroke="#378ADD" stroke-width="2" stroke-dasharray=""></polyline></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Brecha TC real (L_Z_GAP)</div>
+      <svg class="chart" height="140" id="irf_L_Z_GAP" viewBox="0 0 300 140"><line x1="36" y1="69.5" x2="294" y2="69.5" stroke="#2a3040" stroke-width="1"></line>
+    <text x="2" y="14" fill="#6b7684" font-size="9">1.46</text>
+    <text x="2" y="126" fill="#6b7684" font-size="9">-1.21</text><polyline points="36.0,6.0 47.2,22.0 58.4,37.6 69.7,52.6 80.9,66.6 92.1,79.5 103.3,91.0 114.5,100.8 125.7,109.0 137.0,115.2 148.2,119.5 159.4,121.8 170.6,122.0 181.8,120.3 193.0,116.6 204.3,111.3 215.5,104.4 226.7,96.3 237.9,87.1 249.1,77.2 260.3,66.9 271.6,56.6 282.8,46.5 294.0,37.1" fill="none" stroke="#8fc24a" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,6.0 47.2,22.0 58.4,37.6 69.7,52.6 80.9,66.6 92.1,79.5 103.3,91.0 114.5,100.8 125.7,109.0 137.0,115.2 148.2,119.5 159.4,121.8 170.6,122.0 181.8,120.3 193.0,116.6 204.3,111.3 215.5,104.4 226.7,96.3 237.9,87.1 249.1,77.2 260.3,66.9 271.6,56.6 282.8,46.5 294.0,37.1" fill="none" stroke="#8fc24a" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,6.0 47.2,22.0 58.4,37.6 69.7,52.6 80.9,66.6 92.1,79.5 103.3,91.0 114.5,100.8 125.7,109.0 137.0,115.2 148.2,119.5 159.4,121.8 170.6,122.0 181.8,120.3 193.0,116.6 204.3,111.3 215.5,104.4 226.7,96.3 237.9,87.1 249.1,77.2 260.3,66.9 271.6,56.6 282.8,46.5 294.0,37.1" fill="none" stroke="#8fc24a" stroke-width="2" stroke-dasharray=""></polyline></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Inflación vs objetivo</div>
+      <svg class="chart" height="140" id="irf_CPI_GAP" viewBox="0 0 300 140"><line x1="36" y1="6.0" x2="294" y2="6.0" stroke="#2a3040" stroke-width="1"></line>
+    <text x="2" y="14" fill="#6b7684" font-size="9">0</text>
+    <text x="2" y="126" fill="#6b7684" font-size="9">-4.47</text><polyline points="36.0,82.1 47.2,78.8 58.4,74.1 69.7,68.1 80.9,62.9 92.1,58.7 103.3,55.5 114.5,53.4 125.7,52.7 137.0,53.1 148.2,54.8 159.4,57.7 170.6,61.6 181.8,66.4 193.0,72.0 204.3,78.1 215.5,84.7 226.7,91.3 237.9,97.8 249.1,104.1 260.3,109.8 271.6,114.8 282.8,118.9 294.0,122.0" fill="none" stroke="#D4537E" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,82.1 47.2,78.8 58.4,74.1 69.7,68.1 80.9,62.9 92.1,58.7 103.3,55.5 114.5,53.4 125.7,52.7 137.0,53.1 148.2,54.8 159.4,57.7 170.6,61.6 181.8,66.4 193.0,72.0 204.3,78.1 215.5,84.7 226.7,91.3 237.9,97.8 249.1,104.1 260.3,109.8 271.6,114.8 282.8,118.9 294.0,122.0" fill="none" stroke="#D4537E" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,82.1 47.2,78.8 58.4,74.1 69.7,68.1 80.9,62.9 92.1,58.7 103.3,55.5 114.5,53.4 125.7,52.7 137.0,53.1 148.2,54.8 159.4,57.7 170.6,61.6 181.8,66.4 193.0,72.0 204.3,78.1 215.5,84.7 226.7,91.3 237.9,97.8 249.1,104.1 260.3,109.8 271.6,114.8 282.8,118.9 294.0,122.0" fill="none" stroke="#D4537E" stroke-width="2" stroke-dasharray=""></polyline></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Tasa de política</div>
+      <svg class="chart" height="140" id="irf_RS" viewBox="0 0 300 140"><line x1="36" y1="59.7" x2="294" y2="59.7" stroke="#2a3040" stroke-width="1"></line>
+    <text x="2" y="14" fill="#6b7684" font-size="9">0.7</text>
+    <text x="2" y="126" fill="#6b7684" font-size="9">-0.81</text><polyline points="36.0,57.1 47.2,52.3 58.4,45.8 69.7,37.9 80.9,29.6 92.1,21.8 103.3,15.2 114.5,10.2 125.7,7.1 137.0,6.0 148.2,7.1 159.4,10.3 170.6,15.5 181.8,22.5 193.0,31.1 204.3,41.0 215.5,51.8 226.7,63.1 237.9,74.7 249.1,86.0 260.3,96.8 271.6,106.6 282.8,115.1 294.0,122.0" fill="none" stroke="#7F77DD" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,57.1 47.2,52.3 58.4,45.8 69.7,37.9 80.9,29.6 92.1,21.8 103.3,15.2 114.5,10.2 125.7,7.1 137.0,6.0 148.2,7.1 159.4,10.3 170.6,15.5 181.8,22.5 193.0,31.1 204.3,41.0 215.5,51.8 226.7,63.1 237.9,74.7 249.1,86.0 260.3,96.8 271.6,106.6 282.8,115.1 294.0,122.0" fill="none" stroke="#7F77DD" stroke-width="1" stroke-dasharray="3 2"></polyline><polyline points="36.0,57.1 47.2,52.3 58.4,45.8 69.7,37.9 80.9,29.6 92.1,21.8 103.3,15.2 114.5,10.2 125.7,7.1 137.0,6.0 148.2,7.1 159.4,10.3 170.6,15.5 181.8,22.5 193.0,31.1 204.3,41.0 215.5,51.8 226.7,63.1 237.9,74.7 249.1,86.0 260.3,96.8 271.6,106.6 282.8,115.1 294.0,122.0" fill="none" stroke="#7F77DD" stroke-width="2" stroke-dasharray=""></polyline></svg>
+    </div></div>
+
+<!-- Descomposición MCI -->
+<h3>Descomposición MCI — canal tasa real vs canal cambiario</h3>
+<div class="card">
+  <svg class="chart" height="160" id="mciDecomp" viewBox="0 0 800 160"><line x1="36" y1="80.2" x2="794" y2="80.2" stroke="#2a3040" stroke-width="1"></line>
+    <text x="2" y="14" fill="#6b7684" font-size="9">0.52</text>
+    <text x="2" y="146" fill="#6b7684" font-size="9">-0.44</text><rect x="39.2" y="80.2" width="25.3" height="15.7" fill="#7F77DD" opacity="0.85"></rect><rect x="39.2" y="80.2" width="25.3" height="61.8" fill="#1D9E75" opacity="0.85"></rect><text x="51.8" y="156" fill="#6b7684" font-size="9" text-anchor="middle">0</text><rect x="70.7" y="80.2" width="25.3" height="27.6" fill="#7F77DD" opacity="0.85"></rect><rect x="70.7" y="80.2" width="25.3" height="46.2" fill="#1D9E75" opacity="0.85"></rect><rect x="102.3" y="80.2" width="25.3" height="41.8" fill="#7F77DD" opacity="0.85"></rect><rect x="102.3" y="80.2" width="25.3" height="31.0" fill="#1D9E75" opacity="0.85"></rect><rect x="133.9" y="80.2" width="25.3" height="51.3" fill="#7F77DD" opacity="0.85"></rect><rect x="133.9" y="80.2" width="25.3" height="16.5" fill="#1D9E75" opacity="0.85"></rect><rect x="165.5" y="80.2" width="25.3" height="56.8" fill="#7F77DD" opacity="0.85"></rect><rect x="165.5" y="80.2" width="25.3" height="2.8" fill="#1D9E75" opacity="0.85"></rect><text x="178.1" y="156" fill="#6b7684" font-size="9" text-anchor="middle">4</text><rect x="197.1" y="80.2" width="25.3" height="59.0" fill="#7F77DD" opacity="0.85"></rect><rect x="197.1" y="70.5" width="25.3" height="9.7" fill="#1D9E75" opacity="0.85"></rect><rect x="228.7" y="80.2" width="25.3" height="58.2" fill="#7F77DD" opacity="0.85"></rect><rect x="228.7" y="59.3" width="25.3" height="20.9" fill="#1D9E75" opacity="0.85"></rect><rect x="260.2" y="80.2" width="25.3" height="54.7" fill="#7F77DD" opacity="0.85"></rect><rect x="260.2" y="49.7" width="25.3" height="30.5" fill="#1D9E75" opacity="0.85"></rect><rect x="291.8" y="80.2" width="25.3" height="48.9" fill="#7F77DD" opacity="0.85"></rect><rect x="291.8" y="41.7" width="25.3" height="38.4" fill="#1D9E75" opacity="0.85"></rect><text x="304.5" y="156" fill="#6b7684" font-size="9" text-anchor="middle">8</text><rect x="323.4" y="80.2" width="25.3" height="41.1" fill="#7F77DD" opacity="0.85"></rect><rect x="323.4" y="35.6" width="25.3" height="44.5" fill="#1D9E75" opacity="0.85"></rect><rect x="355.0" y="80.2" width="25.3" height="31.6" fill="#7F77DD" opacity="0.85"></rect><rect x="355.0" y="31.5" width="25.3" height="48.7" fill="#1D9E75" opacity="0.85"></rect><rect x="386.6" y="80.2" width="25.3" height="20.8" fill="#7F77DD" opacity="0.85"></rect><rect x="386.6" y="29.3" width="25.3" height="50.9" fill="#1D9E75" opacity="0.85"></rect><rect x="418.2" y="80.2" width="25.3" height="9.1" fill="#7F77DD" opacity="0.85"></rect><rect x="418.2" y="29.1" width="25.3" height="51.1" fill="#1D9E75" opacity="0.85"></rect><text x="430.8" y="156" fill="#6b7684" font-size="9" text-anchor="middle">12</text><rect x="449.7" y="77.0" width="25.3" height="3.2" fill="#7F77DD" opacity="0.85"></rect><rect x="449.7" y="30.8" width="25.3" height="49.4" fill="#1D9E75" opacity="0.85"></rect><rect x="481.3" y="64.7" width="25.3" height="15.5" fill="#7F77DD" opacity="0.85"></rect><rect x="481.3" y="34.3" width="25.3" height="45.9" fill="#1D9E75" opacity="0.85"></rect><rect x="512.9" y="52.6" width="25.3" height="27.5" fill="#7F77DD" opacity="0.85"></rect><rect x="512.9" y="39.5" width="25.3" height="40.7" fill="#1D9E75" opacity="0.85"></rect><rect x="544.5" y="41.3" width="25.3" height="38.9" fill="#7F77DD" opacity="0.85"></rect><rect x="544.5" y="46.2" width="25.3" height="34.0" fill="#1D9E75" opacity="0.85"></rect><text x="557.1" y="156" fill="#6b7684" font-size="9" text-anchor="middle">16</text><rect x="576.1" y="31.0" width="25.3" height="49.2" fill="#7F77DD" opacity="0.85"></rect><rect x="576.1" y="54.1" width="25.3" height="26.0" fill="#1D9E75" opacity="0.85"></rect><rect x="607.7" y="22.2" width="25.3" height="58.0" fill="#7F77DD" opacity="0.85"></rect><rect x="607.7" y="63.1" width="25.3" height="17.1" fill="#1D9E75" opacity="0.85"></rect><rect x="639.2" y="15.0" width="25.3" height="65.1" fill="#7F77DD" opacity="0.85"></rect><rect x="639.2" y="72.7" width="25.3" height="7.5" fill="#1D9E75" opacity="0.85"></rect><rect x="670.8" y="9.8" width="25.3" height="70.3" fill="#7F77DD" opacity="0.85"></rect><rect x="670.8" y="80.2" width="25.3" height="2.5" fill="#1D9E75" opacity="0.85"></rect><text x="683.5" y="156" fill="#6b7684" font-size="9" text-anchor="middle">20</text><rect x="702.4" y="6.8" width="25.3" height="73.4" fill="#7F77DD" opacity="0.85"></rect><rect x="702.4" y="80.2" width="25.3" height="12.6" fill="#1D9E75" opacity="0.85"></rect><rect x="734.0" y="6.0" width="25.3" height="74.2" fill="#7F77DD" opacity="0.85"></rect><rect x="734.0" y="80.2" width="25.3" height="22.4" fill="#1D9E75" opacity="0.85"></rect><rect x="765.6" y="7.5" width="25.3" height="72.7" fill="#7F77DD" opacity="0.85"></rect><rect x="765.6" y="80.2" width="25.3" height="31.6" fill="#1D9E75" opacity="0.85"></rect></svg>
+</div>
+
+<!-- Trayectorias con incertidumbre MCMC -->
+<h3>Trayectorias con incertidumbre MCMC — percentiles reales del posterior</h3>
+<div style="display:flex;gap:16px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+  <label style="display:flex;align-items:center;gap:6px">
+    <input type="checkbox" id="mcEnabled">
+    Activar (recalcula con cada cambio de shock/calibración)
+  </label>
+  <div>
+    <label>N° de trayectorias: <span id="mcNLbl">150</span></label>
+    <input type="range" id="mcN" min="50" max="300" step="25" value="150">
+  </div>
+  <div>
+    <label>Horizonte fan chart: <span id="mcHorizonLbl">16</span> trim.</label>
+    <input type="range" id="mcHorizon" min="8" max="20" step="4" value="16">
+  </div>
+  <label style="display:flex;align-items:center;gap:6px">
+    <input type="checkbox" id="mcNoiseLimitEnabled">
+    Limitar ruido nuevo a los primeros <span id="mcNoiseLimitNLbl">8</span> trim.
+  </label>
+  <input type="range" id="mcNoiseLimitN" min="4" max="16" step="2" value="8" style="width:100px">
+</div>
+<div class="grid4" id="mcGrid">
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Brecha de producto</div>
+      <svg class="chart" height="140" id="mc_L_GDP_GAP" viewBox="0 0 300 140"></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Inflación vs objetivo</div>
+      <svg class="chart" height="140" id="mc_CPI_GAP" viewBox="0 0 300 140"></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Condiciones monetarias (MCI)</div>
+      <svg class="chart" height="140" id="mc_MCI" viewBox="0 0 300 140"></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">Tasa de política</div>
+      <svg class="chart" height="140" id="mc_RS" viewBox="0 0 300 140"></svg>
+    </div>
+</div>
+<p class="foot" style="margin-top:4px">
+  Banda sombreada = percentiles 10-90 sobre <span id="mcNFoot">150</span> trayectorias simuladas usando draws reales de la posterior MCMC (ρ y stderr del bloque externo, R-hat≤1.0025). Línea sólida = mediana. A diferencia de la banda de sensibilidad de arriba, esto SÍ es incertidumbre bayesiana genuina — combina incertidumbre de parámetro (qué tan bien conocemos ρ) e incertidumbre de shock futuro (ruido aleatorio en cada período, usando los stderr estimados). El horizonte del fan chart es independiente de la "Ventana" general de arriba — se mantiene acotado a 8-20 trimestres para legibilidad, dado que las bandas se abren sustancialmente más allá de ese rango. Con "limitar ruido" activo, no se inyecta ruido nuevo después del trimestre N indicado; la banda sigue reflejando lo ya ocurrido (vía la persistencia ρ de cada bloque), pero deja de ensancharse por shocks futuros hipotéticos más allá de ese punto.
+</p>
+
+<!-- Calibración -->
+<div style="margin:14px 0 6px;display:flex;gap:8px">
+  <button onclick="toggleCalib()">Mostrar / editar calibración</button>
+  <button onclick="resetCalib()">Restaurar base</button>
+</div>
+<div id="calibPanel" style="display:none">
+  <div class="grid4" id="calibSliders"></div>
+</div>
+
+<p class="foot">
+  Objetivo inflación: 2.0% interanual. Bandas paramétricas = sensibilidad ±0.15, no intervalos bayesianos. Trayectorias con incertidumbre MCMC = percentiles reales del posterior (ver abajo).
+  Las 3 AR(1) del bloque externo tienen ρ propio, estimado por Bayes (MCMC, media posterior) con datos reales FRED — ver protocolo de validación Dynare.
+</p>
+
+</div><!-- fin tab-diagnostico -->
+
+<!-- ═══════════════════════════════════════════════════════
+     PESTAÑA 2: FRED LOADER
+     ═══════════════════════════════════════════════════════ -->
+<div id="tab-fred" style="display:none">
+
+<h3>Carga de datos reales — bloque externo FRED</h3>
+<p class="sub">Series: GDPC1 (PIB real EE.UU.) · FEDFUNDS (tasa Fed) · CPIAUCSL (CPI EE.UU.) · BAA10Y (spread BBB, proxy PREM) · transformaciones sección 5 del documento QPM</p>
+
+<div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end;margin-bottom:14px">
+  <div>
+    <label class="ctrl-label">API Key FRED — gratuita en fred.stlouisfed.org/docs/api/api_key.html</label>
+    <input type="password" id="fredKey" placeholder="Pegá tu API key aquí..." style="font-family:Consolas,monospace">
+  </div>
+  <div>
+    <label class="ctrl-label">Desde</label>
+    <input type="date" id="fredStart" value="2000-01-01" style="width:140px">
+  </div>
+  <div style="padding-bottom:1px">
+    <button class="primary" onclick="loadFRED()" id="fredBtn">Cargar FRED</button>
+  </div>
+</div>
+
+<div id="fredError" style="display:none" class="err-panel"></div>
+<div id="fredLoading" style="display:none" class="info-panel">Descargando series desde FRED...</div>
+
+<div class="grid3" style="margin-bottom:14px">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <span class="badge" style="background:#378ADD"></span>
+      <span class="mono" style="font-size:12px;font-weight:600">GDPC1</span>
+    </div>
+    <div style="font-size:12px;color:#8a96a3">PIB real EE.UU. trimestral</div>
+    <div style="font-size:11px;color:#6b7684;margin-top:3px">→ L_GDP_RW_GAP · entra en IS vía b3</div>
+    <div id="gdpMeta" style="font-size:11px;font-family:Consolas,monospace;margin-top:4px;color:#e7ecf2"></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <span class="badge" style="background:#9a8ee0"></span>
+      <span class="mono" style="font-size:12px;font-weight:600">FEDFUNDS</span>
+    </div>
+    <div style="font-size:12px;color:#8a96a3">Federal Funds Rate efectivo</div>
+    <div style="font-size:11px;color:#6b7684;margin-top:3px">→ RS_RW · entra en UIP vía diferencial</div>
+    <div id="rateMeta" style="font-size:11px;font-family:Consolas,monospace;margin-top:4px;color:#e7ecf2"></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <span class="badge" style="background:#D4537E"></span>
+      <span class="mono" style="font-size:12px;font-weight:600">CPIAUCSL</span>
+    </div>
+    <div style="font-size:12px;color:#8a96a3">CPI EE.UU. todos los ítems</div>
+    <div style="font-size:11px;color:#6b7684;margin-top:3px">→ D4L_CPI_RW · entra en L_Z vía L_CPI_RW</div>
+    <div id="cpiMeta" style="font-size:11px;font-family:Consolas,monospace;margin-top:4px;color:#e7ecf2"></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <span class="badge" style="background:#c1547e"></span>
+      <span class="mono" style="font-size:12px;font-weight:600">BAA10Y</span>
+    </div>
+    <div style="font-size:12px;color:#8a96a3">Spread corporativo BBB EE.UU. sobre Treasury 10a</div>
+    <div style="font-size:11px;color:#6b7684;margin-top:3px">→ PREM (proxy transitorio) · entra en UIP vía e1</div>
+    <div id="premMeta" style="font-size:11px;font-family:Consolas,monospace;margin-top:4px;color:#e7ecf2"></div>
+  </div>
+</div>
+<p class="sub" style="margin-top:-8px">PREM es un proxy de prima de riesgo <strong>global</strong> (apetito de riesgo agregado), no de riesgo soberano específico de la economía doméstica en estudio. Si esa economía tiene dinámica de riesgo dominada por factores idiosincráticos (fiscal, político, términos de intercambio) o su referente comercial/financiero predominante no es EE.UU., este proxy subestima o no captura la prima relevante — conviene reemplazarlo por el spread soberano propio (EMBI/CDS) cuando esté disponible.</p>
+
+<div id="fredResults" style="display:none">
+  <h3>Series transformadas — brechas listas para el solver</h3>
+  <div class="grid3" style="margin-bottom:14px">
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">L_GDP_RW_GAP (brecha PIB EE.UU.)</div>
+      <svg class="chart" height="130" id="fredChart1" viewBox="0 0 350 130"></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">RS_RW — Federal Funds Rate (nivel)</div>
+      <svg class="chart" height="130" id="fredChart2" viewBox="0 0 350 130"></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">D4L_CPI_RW — Inflación interanual EE.UU.</div>
+      <svg class="chart" height="130" id="fredChart3" viewBox="0 0 350 130"></svg>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">PREM — BAA10Y (spread, nivel)</div>
+      <svg class="chart" height="130" id="fredChart4" viewBox="0 0 350 130"></svg>
+    </div>
+  </div>
+
+  <h3>Estadísticas descriptivas de la muestra</h3>
+  <div class="grid4" id="fredStats" style="margin-bottom:14px"></div>
+
+  <h3>Últimos 8 trimestres — serie alineada</h3>
+  <table>
+    <thead><tr><th style="text-align:left">Trimestre</th><th>L_GDP_RW_GAP</th><th>RS_RW (nivel)</th><th>D4L_CPI_RW</th><th>PREM (nivel)</th></tr></thead>
+    <tbody id="fredTable"></tbody>
+  </table>
+
+  <div style="display:flex;gap:10px;margin-top:8px">
+    <button class="primary" onclick="exportFRED()">Exportar JSON (contrato sección 7)</button>
+    <button onclick="usarEnDiagnostico()">Usar en diagnóstico →</button>
+  </div>
+  <p class="foot">
+    El JSON exportado sigue el contrato sección 7 con data_mode: "real_externo".
+    "Usar en diagnóstico" carga las series como condiciones iniciales del bloque externo.
+  </p>
+</div>
+
+<div id="fredEmpty" class="info-panel">
+  Ingresá tu API key y presioná <strong>Cargar FRED</strong>.<br>
+  La key es gratuita en <strong>fred.stlouisfed.org/docs/api/api_key.html</strong> — llega por email en minutos.
+</div>
+
+</div><!-- fin tab-fred -->
+</div><!-- fin .app -->
+
+<script>
+'use strict';
+
+// ─── Calibración ────────────────────────────────────────────────────────────
+// g2 corregido 2026-07-13: 0.5 -> 1.5 (ver index.html principal para la justificación completa
+// de Blanchard-Kahn/Taylor principle; aplicado acá igual para que el feature MC parta de un
+// sistema determinístico estable).
+const CALIB_DEFAULT = {b1:.8,b2:.3,b3:.5,b4:.7,a1:.7,a2:.2,a3:.7,g1:.7,g2:1.5,g3:.5,e1:.4};
+let calib = {...CALIB_DEFAULT};
+const D4L_TAR = 2.0; // corregido 2026-07: meta real del proyecto es 2%, no 3% (quedaba desactualizado)
+
+const PARAM_META = [
+  {key:'b1',label:'b1 — persistencia brecha (IS)',min:.3,max:.95,step:.05},
+  {key:'b2',label:'b2 — sensibilidad MCI en IS',min:.1,max:.8,step:.05},
+  {key:'b3',label:'b3 — canal externo en IS',min:.1,max:.9,step:.05},
+  {key:'b4',label:'b4 — peso tasa real en MCI',min:.3,max:.9,step:.05},
+  {key:'a1',label:'a1 — persistencia inflación',min:.3,max:.9,step:.05},
+  {key:'a2',label:'a2 — sensibilidad RMC',min:.1,max:.5,step:.05},
+  {key:'a3',label:'a3 — peso brecha en RMC',min:.3,max:.9,step:.05},
+  {key:'g1',label:'g1 — inercia tasa política',min:.3,max:.9,step:.05},
+  {key:'g2',label:'g2 — respuesta inflación',min:.1,max:2.0,step:.1},
+  {key:'g3',label:'g3 — respuesta brecha',min:.1,max:1.5,step:.1},
+  {key:'e1',label:'e1 — peso premio riesgo (UIP)',min:.1,max:.9,step:.05},
+];
+
+// ─── Solver lineal directo ───────────────────────────────────────────────────
+const VARS = ['L_GDP_GAP','DLA_CPI','D4L_CPI','RS','L_S','L_CPI','L_CPI_RW','RR','L_Z','MCI','RMC'];
+const K = VARS.length;
+
+// Muestra de 300 draws reales del posterior MCMC (post burn-in, R-hat<=1.0025)
+// columnas: [rho_rw, rho_rs_rw, rho_cpi_rw, stderr_eps_gdp, stderr_eps_rs, stderr_eps_cpi]
+// fuente: qpm_ar1_estimation_mcmc_robust_v2_mh1_blck{1,2}.mat, submuestreo uniforme 20000->300
+const POSTERIOR_DRAWS = [[0.8491,0.9634,0.8670,0.5414,0.3897,0.7384],[0.8994,0.9799,0.8777,0.5194,0.3967,0.9299],[0.8674,0.9639,0.8258,0.5619,0.3883,0.8609],[0.9210,0.9814,0.9157,0.6319,0.3752,0.8033],[0.7955,0.9731,0.8608,0.5663,0.4261,0.8504],[0.8507,0.9437,0.8924,0.5455,0.3821,0.8542],[0.8853,0.9417,0.9242,0.6251,0.4047,0.7098],[0.8914,0.9800,0.8445,0.5538,0.4244,0.8838],[0.8196,0.9645,0.8026,0.6160,0.4164,0.7764],[0.7999,0.9684,0.8437,0.5869,0.4005,0.8653],[0.8468,0.9617,0.8629,0.6184,0.3974,0.8619],[0.8209,0.9530,0.7971,0.5656,0.4463,0.8785],[0.7861,0.9502,0.8209,0.5600,0.4446,0.8122],[0.9119,0.9552,0.7735,0.5737,0.4158,0.8696],[0.8925,0.9214,0.8296,0.5573,0.4512,0.8442],[0.8635,0.9280,0.9460,0.5476,0.4166,0.8696],[0.8962,0.9497,0.8996,0.5339,0.4102,0.7469],[0.8986,0.9538,0.8881,0.5668,0.3934,0.9249],[0.9291,0.9303,0.9092,0.5681,0.3958,0.8199],[0.8324,0.9551,0.9323,0.5209,0.3962,0.7798],[0.8676,0.9479,0.8322,0.5599,0.4523,0.7420],[0.8481,0.9808,0.8978,0.5342,0.4009,0.8211],[0.8214,0.9510,0.8826,0.5864,0.4039,0.8452],[0.7832,0.9497,0.8145,0.6067,0.4276,0.6728],[0.8457,0.9590,0.8716,0.5317,0.3455,0.9037],[0.7544,0.9741,0.9329,0.5631,0.3938,0.8214],[0.8160,0.9478,0.8283,0.5855,0.4606,0.7736],[0.9034,0.9777,0.9125,0.5156,0.4045,0.7900],[0.8842,0.9436,0.8383,0.5426,0.4780,0.8194],[0.7633,0.9489,0.8072,0.5805,0.4539,0.8473],[0.8391,0.9431,0.8288,0.5297,0.4085,0.7900],[0.8973,0.9674,0.8346,0.5600,0.3943,0.8121],[0.8716,0.9373,0.8705,0.5753,0.3996,0.8103],[0.8197,0.9793,0.8358,0.5864,0.4154,0.7844],[0.9089,0.9395,0.9369,0.5771,0.4158,0.8831],[0.8724,0.9557,0.8529,0.5687,0.3850,0.7432],[0.9100,0.9579,0.9148,0.6148,0.4005,0.8846],[0.8439,0.9526,0.8773,0.5473,0.4041,0.8891],[0.8201,0.9295,0.8624,0.5612,0.4365,0.8273],[0.8840,0.9572,0.9147,0.5733,0.3944,0.9213],[0.9292,0.9605,0.8318,0.5258,0.3918,0.8785],[0.8742,0.9499,0.8809,0.5824,0.3884,0.7604],[0.9445,0.9826,0.9046,0.6366,0.4128,0.7188],[0.8438,0.9836,0.8235,0.5867,0.4482,0.7977],[0.9010,0.9863,0.8286,0.5125,0.4600,0.9305],[0.8230,0.9457,0.8158,0.5567,0.4909,0.8597],[0.8894,0.9388,0.8077,0.4976,0.4415,0.7841],[0.8545,0.9480,0.8062,0.4994,0.4560,0.8671],[0.8211,0.9627,0.8022,0.6701,0.4251,0.7502],[0.8955,0.9828,0.8380,0.5664,0.4190,0.7728],[0.8979,0.9616,0.8025,0.6357,0.3813,0.8076],[0.8183,0.9517,0.8912,0.5605,0.3755,0.8130],[0.8816,0.9253,0.8804,0.5348,0.3748,0.7859],[0.8232,0.9648,0.7362,0.5213,0.3807,0.9499],[0.9396,0.9392,0.8650,0.5284,0.4067,0.7509],[0.8530,0.9720,0.9160,0.5887,0.3803,0.9330],[0.8658,0.9439,0.8596,0.5629,0.4105,0.7946],[0.8987,0.9426,0.8812,0.6307,0.4376,0.8430],[0.8406,0.9655,0.7892,0.6194,0.3890,0.9247],[0.8290,0.9403,0.8023,0.5121,0.4340,0.7976],[0.8533,0.9669,0.8794,0.5885,0.3986,0.7777],[0.8435,0.9429,0.8448,0.5799,0.3855,0.8452],[0.8601,0.9472,0.8111,0.5553,0.3805,0.7560],[0.8587,0.9592,0.9390,0.5339,0.4254,0.7858],[0.8398,0.9756,0.8771,0.5236,0.3848,0.8624],[0.9163,0.9586,0.8369,0.5490,0.4349,0.9290],[0.8610,0.9461,0.8663,0.6141,0.4117,0.8072],[0.8598,0.9494,0.8046,0.5909,0.4056,0.8238],[0.8068,0.9472,0.9193,0.6404,0.4167,0.8946],[0.8667,0.9642,0.9224,0.5493,0.4211,0.8661],[0.8235,0.9509,0.8901,0.6274,0.4510,0.8366],[0.8834,0.9550,0.7758,0.6025,0.3523,0.8648],[0.8768,0.9646,0.7831,0.6058,0.4003,0.8285],[0.8626,0.9475,0.8234,0.5425,0.3641,0.8484],[0.8570,0.9525,0.8462,0.5967,0.3854,0.9205],[0.8668,0.9286,0.7628,0.6432,0.4203,0.9449],[0.8270,0.9704,0.8197,0.6055,0.4054,0.8829],[0.7971,0.9482,0.9167,0.6010,0.4164,0.8294],[0.8854,0.9682,0.9067,0.5519,0.4331,0.8346],[0.8678,0.9364,0.8781,0.5428,0.4004,0.8046],[0.8271,0.9498,0.8465,0.5150,0.4193,0.8155],[0.8594,0.9500,0.8433,0.5062,0.4169,0.8212],[0.8666,0.9358,0.8955,0.6098,0.4110,0.8408],[0.8766,0.9342,0.7439,0.5818,0.3847,0.9109],[0.9065,0.9592,0.8160,0.6826,0.4711,0.8242],[0.8652,0.9319,0.8191,0.5692,0.4075,0.8892],[0.7870,0.9293,0.8797,0.5624,0.4240,0.8224],[0.8305,0.9426,0.8489,0.6287,0.4019,0.8702],[0.9276,0.9480,0.7882,0.5093,0.4286,0.8173],[0.7727,0.9493,0.9418,0.5668,0.4119,0.9531],[0.8436,0.9394,0.8174,0.5563,0.4224,0.8192],[0.8642,0.9109,0.8721,0.5462,0.4612,0.8456],[0.8443,0.9543,0.9036,0.5659,0.3796,0.7476],[0.8039,0.9539,0.9312,0.5195,0.4359,0.7758],[0.9322,0.9297,0.9158,0.5328,0.4223,0.8213],[0.8776,0.9660,0.9059,0.6294,0.4082,0.7128],[0.9128,0.9333,0.8137,0.6031,0.3901,0.8977],[0.9146,0.9460,0.8319,0.5569,0.4129,0.9040],[0.8074,0.9313,0.8455,0.5506,0.3771,0.7467],[0.8166,0.9580,0.9280,0.5795,0.3657,0.7630],[0.8752,0.9247,0.8294,0.5454,0.4248,0.8789],[0.7754,0.9102,0.8779,0.5583,0.4955,0.7895],[0.8019,0.9761,0.8446,0.4787,0.4152,0.7630],[0.8225,0.9527,0.8256,0.5996,0.4271,0.8261],[0.8771,0.9507,0.8902,0.5558,0.3988,0.7930],[0.8539,0.9671,0.8335,0.5674,0.4070,0.7722],[0.9114,0.9616,0.9262,0.5367,0.3673,0.7446],[0.9300,0.9428,0.8930,0.5293,0.4279,0.8252],[0.8073,0.9490,0.8696,0.5740,0.3947,0.8049],[0.7524,0.9422,0.8551,0.6105,0.4419,0.8055],[0.8478,0.9466,0.9139,0.5935,0.4339,0.7384],[0.9326,0.9569,0.8694,0.5575,0.4467,0.7994],[0.9064,0.9422,0.8297,0.6145,0.4213,0.8668],[0.8210,0.9440,0.9094,0.5697,0.4062,0.7392],[0.9077,0.9597,0.8512,0.5208,0.4002,0.7023],[0.8238,0.9446,0.9163,0.5481,0.4095,0.7823],[0.8320,0.9785,0.8078,0.5775,0.4382,0.8281],[0.8694,0.9585,0.8412,0.5359,0.4189,0.7935],[0.8948,0.9806,0.8265,0.4646,0.4134,0.8606],[0.8445,0.9280,0.9031,0.5827,0.4067,0.8189],[0.9200,0.9610,0.7877,0.6121,0.4226,0.8160],[0.8771,0.9245,0.9422,0.6341,0.4068,0.9032],[0.8004,0.9573,0.8796,0.5849,0.3829,0.8019],[0.8413,0.9427,0.7967,0.5645,0.3856,0.7696],[0.8800,0.9490,0.8976,0.6242,0.4098,0.8534],[0.8809,0.9539,0.8626,0.6353,0.4262,0.8295],[0.8852,0.9675,0.8114,0.5409,0.3669,0.7613],[0.9212,0.9476,0.9170,0.6179,0.3934,0.7262],[0.8578,0.9549,0.7362,0.5844,0.3978,0.9307],[0.8254,0.9632,0.9054,0.6227,0.4091,0.8898],[0.8723,0.9740,0.9207,0.5616,0.4253,0.7321],[0.9091,0.9438,0.8037,0.5214,0.3860,0.8430],[0.8607,0.9287,0.7774,0.6017,0.4440,0.9007],[0.8607,0.9407,0.8265,0.5198,0.4475,0.8816],[0.8394,0.9782,0.8730,0.5634,0.3970,0.7715],[0.9520,0.9729,0.8923,0.5796,0.3913,0.7345],[0.8901,0.9655,0.9281,0.5691,0.3852,0.9628],[0.8023,0.9506,0.7873,0.6353,0.3727,0.8629],[0.8922,0.9654,0.8499,0.5811,0.4177,0.8677],[0.9445,0.9563,0.9204,0.6294,0.4165,0.7270],[0.8801,0.9697,0.8740,0.5877,0.3802,0.7981],[0.8679,0.9325,0.8553,0.5084,0.3656,0.9271],[0.8843,0.9407,0.8193,0.5494,0.4394,0.7711],[0.9271,0.9612,0.8743,0.6226,0.4227,0.8427],[0.8747,0.9553,0.8741,0.5989,0.4792,0.7460],[0.8476,0.9686,0.9065,0.5617,0.4753,0.8643],[0.8411,0.9660,0.8462,0.5433,0.4419,0.6831],[0.8598,0.9815,0.8814,0.6262,0.4105,0.7811],[0.8120,0.9766,0.8292,0.5682,0.3883,0.8432],[0.9383,0.9673,0.8296,0.5763,0.4219,0.7839],[0.9002,0.9477,0.8842,0.6043,0.4744,0.9258],[0.8867,0.9191,0.9586,0.5184,0.3758,0.8193],[0.8771,0.9363,0.8661,0.5921,0.3952,0.7547],[0.7880,0.9573,0.9466,0.6110,0.4444,0.7630],[0.8664,0.9292,0.8230,0.4695,0.4186,0.8793],[0.8501,0.9665,0.8261,0.5375,0.3871,0.8531],[0.9302,0.9529,0.8757,0.6402,0.4280,0.8019],[0.8119,0.9672,0.9140,0.5810,0.4173,0.7784],[0.8741,0.9394,0.8703,0.6071,0.3954,0.7478],[0.8663,0.9605,0.8416,0.6068,0.4013,0.8446],[0.8797,0.9331,0.8801,0.5146,0.4127,0.7569],[0.8793,0.9403,0.8883,0.4988,0.4013,0.7790],[0.8304,0.9562,0.8606,0.5623,0.3669,0.7940],[0.9024,0.9463,0.8652,0.5797,0.3995,0.7886],[0.9045,0.9720,0.8307,0.5752,0.4284,0.8882],[0.8381,0.9758,0.8229,0.5845,0.4621,0.7550],[0.8899,0.9722,0.8560,0.5483,0.4318,0.9244],[0.8701,0.9139,0.8232,0.5284,0.4440,0.7588],[0.8535,0.9662,0.9298,0.5041,0.4233,0.7858],[0.8939,0.9581,0.8119,0.5266,0.4314,0.8363],[0.7735,0.9525,0.8669,0.5582,0.3884,0.8230],[0.8492,0.9397,0.8524,0.5125,0.3790,0.8470],[0.9110,0.9526,0.9270,0.5428,0.4429,0.8122],[0.8493,0.9408,0.8639,0.5832,0.4267,0.7942],[0.9145,0.9418,0.9025,0.5265,0.4363,0.8364],[0.8170,0.9579,0.8422,0.5776,0.4009,0.8092],[0.8580,0.9211,0.8977,0.5707,0.4116,0.8090],[0.8517,0.9186,0.8775,0.5804,0.3621,0.7636],[0.8690,0.9405,0.8523,0.5905,0.3790,0.8371],[0.8134,0.9279,0.8670,0.5596,0.4199,0.8230],[0.8906,0.9524,0.9346,0.5941,0.3425,0.8893],[0.8970,0.9412,0.9573,0.5229,0.4052,0.9044],[0.8692,0.9715,0.8182,0.6028,0.4003,0.8385],[0.8317,0.9488,0.9227,0.5289,0.4402,0.7869],[0.9346,0.9346,0.8667,0.5765,0.4113,0.9264],[0.8708,0.9284,0.8708,0.5500,0.4315,0.8032],[0.7593,0.9732,0.8099,0.5460,0.4043,0.7689],[0.8836,0.9819,0.8533,0.6038,0.3697,0.7171],[0.8875,0.9530,0.8559,0.5660,0.4664,0.8158],[0.8702,0.9446,0.8509,0.5554,0.4286,0.7645],[0.8800,0.9441,0.9024,0.4969,0.3982,0.8325],[0.8988,0.9396,0.8255,0.5478,0.4365,0.7753],[0.7617,0.9701,0.9248,0.5811,0.3427,0.8983],[0.8810,0.9305,0.8192,0.5831,0.4814,0.8107],[0.8823,0.9577,0.9147,0.6007,0.4040,0.8654],[0.8376,0.9466,0.8287,0.5146,0.3910,0.8190],[0.9047,0.9684,0.8599,0.5550,0.3967,0.8841],[0.9299,0.9565,0.8515,0.5927,0.4829,0.8292],[0.8981,0.9373,0.9303,0.5192,0.3949,0.7264],[0.9339,0.9366,0.9019,0.5761,0.3858,0.7767],[0.8631,0.9242,0.8830,0.5602,0.3889,0.8029],[0.7509,0.9154,0.7913,0.6888,0.3966,0.7836],[0.8709,0.9606,0.7939,0.4784,0.4223,0.7684],[0.8875,0.9614,0.7624,0.4928,0.4159,0.8764],[0.8365,0.9519,0.8050,0.5301,0.4810,0.7692],[0.8872,0.9313,0.9144,0.6021,0.3879,0.8409],[0.8527,0.9663,0.9611,0.6192,0.3692,0.7990],[0.8843,0.9534,0.8633,0.5396,0.3727,0.7742],[0.8683,0.9445,0.8509,0.6012,0.4266,0.8504],[0.7663,0.9577,0.8132,0.6076,0.4002,0.7697],[0.8068,0.9542,0.8752,0.5712,0.4323,0.9629],[0.8471,0.9497,0.8184,0.5662,0.4479,0.9480],[0.8083,0.9576,0.8881,0.4787,0.3926,0.8360],[0.9215,0.9404,0.8263,0.5282,0.4766,0.8922],[0.8637,0.9801,0.8811,0.5807,0.4049,0.7238],[0.8461,0.9636,0.8544,0.5258,0.4639,0.8913],[0.8962,0.9424,0.8704,0.5603,0.3976,0.7606],[0.8659,0.9711,0.8898,0.5522,0.3811,0.8512],[0.8948,0.9348,0.8624,0.5316,0.3885,0.8838],[0.8494,0.9420,0.8687,0.5536,0.3940,0.6666],[0.9159,0.9436,0.9108,0.5343,0.4113,0.7980],[0.8775,0.9631,0.9036,0.5828,0.4832,0.9075],[0.8205,0.9388,0.8906,0.5484,0.4391,0.8374],[0.8713,0.9601,0.8173,0.4942,0.3575,1.0055],[0.8363,0.9590,0.8430,0.5228,0.3632,0.8405],[0.8212,0.9528,0.8706,0.5480,0.4192,0.9591],[0.8808,0.9659,0.8140,0.5454,0.4192,0.8312],[0.8694,0.9575,0.8930,0.5712,0.3979,0.8968],[0.9061,0.9708,0.8147,0.5461,0.3936,0.9700],[0.8533,0.9785,0.9447,0.5519,0.4271,0.7304],[0.8289,0.9765,0.7966,0.5531,0.4492,0.8727],[0.8975,0.9324,0.8409,0.5615,0.4494,0.7614],[0.8254,0.9699,0.9006,0.5312,0.4270,0.7237],[0.9191,0.9666,0.9012,0.5982,0.3950,0.9085],[0.9279,0.9510,0.8597,0.6774,0.4447,0.7977],[0.8867,0.9628,0.8600,0.5646,0.4278,0.8318],[0.8742,0.9533,0.8902,0.5081,0.4379,0.8800],[0.9020,0.9710,0.8142,0.5845,0.3550,0.7949],[0.8400,0.9546,0.8282,0.5352,0.3952,0.8375],[0.9234,0.9698,0.8004,0.5398,0.4464,0.8247],[0.8758,0.9760,0.7918,0.6201,0.4027,0.8548],[0.9288,0.9358,0.8527,0.5212,0.4288,0.8304],[0.9077,0.9459,0.9053,0.5593,0.3407,0.7746],[0.8952,0.9359,0.9054,0.6060,0.4625,0.8725],[0.8620,0.9377,0.8596,0.5543,0.4374,0.7680],[0.9595,0.9161,0.9139,0.5474,0.4103,0.7824],[0.8248,0.9610,0.8463,0.5716,0.4093,0.8725],[0.8240,0.9569,0.8344,0.5895,0.3782,0.8264],[0.8673,0.9283,0.8066,0.5442,0.4153,0.7479],[0.8443,0.9505,0.8835,0.5786,0.4178,0.7484],[0.8817,0.9547,0.8773,0.5896,0.3909,0.8118],[0.8416,0.9249,0.8939,0.6059,0.4273,0.8205],[0.8350,0.9826,0.8217,0.5960,0.4184,0.8858],[0.8649,0.9558,0.8477,0.5318,0.3867,0.8689],[0.8776,0.9455,0.8473,0.5318,0.4137,0.8475],[0.7890,0.9432,0.8495,0.5908,0.4067,0.7765],[0.8635,0.9725,0.8228,0.5343,0.4561,0.7983],[0.9124,0.9218,0.8620,0.5133,0.4148,0.8562],[0.9292,0.9810,0.8238,0.5011,0.4480,0.8107],[0.9110,0.9535,0.8717,0.5947,0.3876,0.8554],[0.8786,0.9538,0.8858,0.6030,0.4709,0.8103],[0.8510,0.9598,0.9473,0.4951,0.4552,0.7814],[0.8831,0.9567,0.8107,0.5311,0.3785,0.7452],[0.9061,0.9388,0.8505,0.5672,0.4566,0.8532],[0.8941,0.9250,0.8631,0.5427,0.4164,0.7337],[0.8636,0.9420,0.8701,0.5845,0.4111,0.9151],[0.8358,0.9572,0.8275,0.5106,0.3736,0.7690],[0.8736,0.9741,0.8486,0.5573,0.3919,0.8565],[0.8911,0.9333,0.8460,0.6206,0.4483,1.1119],[0.9019,0.9556,0.9007,0.6040,0.4272,0.8818],[0.8367,0.9479,0.8811,0.5113,0.4064,0.7960],[0.8037,0.9522,0.8556,0.5765,0.4435,0.8457],[0.8256,0.9641,0.8278,0.5327,0.3397,0.8495],[0.8002,0.9598,0.8552,0.6293,0.3968,0.7975],[0.8578,0.9587,0.9494,0.5835,0.4129,0.9238],[0.8733,0.9395,0.7763,0.5850,0.4407,0.7747],[0.8073,0.9469,0.8542,0.5518,0.4416,0.7772],[0.8127,0.9305,0.9005,0.5234,0.3875,0.8966],[0.8225,0.9804,0.8610,0.5493,0.4053,0.8164],[0.9035,0.9563,0.8115,0.5269,0.3811,0.7814],[0.7887,0.9591,0.8933,0.5226,0.3752,0.7532],[0.8401,0.9668,0.8313,0.5510,0.4319,0.7856],[0.8244,0.9456,0.8085,0.5978,0.4422,0.7339],[0.8507,0.9767,0.8513,0.5969,0.4302,0.7320],[0.8317,0.9743,0.9076,0.5661,0.4317,0.9011],[0.8131,0.9321,0.8892,0.5696,0.4197,0.7358],[0.8338,0.9682,0.8486,0.5964,0.4093,0.8450],[0.9044,0.9629,0.8452,0.5671,0.4511,0.7003],[0.8705,0.9639,0.8172,0.5388,0.4291,0.7016],[0.9542,0.9561,0.8919,0.5691,0.5174,0.8673],[0.8799,0.9423,0.8112,0.5376,0.4384,0.7804],[0.9368,0.9523,0.7981,0.6354,0.3955,0.8119],[0.8831,0.9564,0.8311,0.5622,0.4522,0.8178],[0.7383,0.9102,0.8721,0.5474,0.4439,0.8239],[0.8430,0.9648,0.8330,0.5579,0.3790,0.7376],[0.8496,0.9421,0.8483,0.5640,0.4501,0.8640],[0.7973,0.9583,0.7939,0.6078,0.4170,0.7386],[0.8927,0.9447,0.8555,0.5309,0.3818,0.8180],[0.8671,0.9695,0.8402,0.5024,0.3898,0.9239],[0.8849,0.9447,0.8796,0.5382,0.3949,0.9908]];
+
+function arF(rho, sh, noise) {
+  const x=new Array(sh.length).fill(0);
+  for(let t=0;t<x.length;t++) x[t]=rho*(t?x[t-1]:0)+sh[t]+(noise?noise[t]:0);
+  return x;
+}
+
+// Box-Muller: ruido gaussiano estandar para las trayectorias estocasticas
+function randNormal(){
+  let u=0,v=0;
+  while(u===0)u=Math.random();
+  while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function gaussSolve(A,b){
+  const n=A.length;
+  for(let i=0;i<n;i++) A[i].push(b[i]);
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(A[r][c])>Math.abs(A[p][c])) p=r;
+    if(p!==c){const t=A[c];A[c]=A[p];A[p]=t;}
+    const pv=A[c][c]; if(Math.abs(pv)<1e-12) continue;
+    for(let r=0;r<n;r++){if(r===c)continue;const f=A[r][c]/pv;if(!f)continue;for(let cc=c;cc<=n;cc++)A[r][cc]-=f*A[c][cc];}
+  }
+  return A.map((r,i)=>r[n]/r[i]);
+}
+
+function solve(shockType, shockSize, horizon, rhoGdp, rhoRs, rhoCpi, cal, mcNoise, rhoPrem){
+  const {b1,b2,b3,b4,a1,a2,a3,g1,g2,g3,e1}=cal;
+  const n=horizon+1, N=n*K;
+  const A=Array.from({length:N},()=>new Array(N).fill(0)), b=new Array(N).fill(0);
+  const idx=(t,v)=>t*K+VARS.indexOf(v);
+  const set=(row,t,v,c)=>{A[row][idx(t,v)]+=c;};
+  const z=()=>new Array(n).fill(0);
+  const SG=z(),SD=z(),SR=z(),SPR=z(),SGW=z(),SRW=z(),SCW=z();
+  const t0=0;
+  if(shockType==='demanda')            SG[t0]=shockSize;
+  if(shockType==='precios')            SD[t0]=shockSize;
+  if(shockType==='politica_monetaria') SR[t0]=shockSize;
+  if(shockType==='tipo_cambio')        SPR[t0]=shockSize;
+  if(shockType==='demanda_externa')    SGW[t0]=shockSize;
+  if(shockType==='tasa_externa')       SRW[t0]=shockSize;
+  if(shockType==='precios_externos')   SCW[t0]=shockSize;
+  if(shockType==='rw_combinado'){SGW[t0]=shockSize;SRW[t0]=shockSize;SCW[t0]=shockSize;}
+  const RW=arF(rhoGdp,SGW,mcNoise&&mcNoise.gdp), RSRW=arF(rhoRs,SRW,mcNoise&&mcNoise.rs), DCPIRW=arF(rhoCpi,SCW,mcNoise&&mcNoise.cpi);
+  // AGREGADO 2026-07-15 (PREM/BAA10Y): antes PR era un impulso de un solo período
+  // sin persistencia propia (PR[t0]=shockSize y nada más). Ahora es un forcing AR(1)
+  // igual que RW/RSRW/DCPIRW -- necesario porque, a diferencia de los shocks domésticos
+  // (SG/SD/SR), que sí persisten a través de la dinámica propia del modelo (b1/a1/g1),
+  // la ecuación de UIP no tiene rezago propio sobre PR: sin AR(1) explícito, un shock
+  // de riesgo/TC se apagaba en un solo período por construcción, no por diseño económico.
+  // rhoPrem: default 0.8 (media del prior) hasta recuperar el rho_prem real del oo_
+  // tras correr la estimación bayesiana extendida — ver .mod actualizado.
+  const PR=arF(rhoPrem!==undefined?rhoPrem:0.8, SPR, mcNoise&&mcNoise.prem);
+  for(let t=0;t<n;t++){
+    let row=idx(t,'L_CPI'); set(row,t,'L_CPI',1); if(t>0)set(row,t-1,'L_CPI',-1); set(row,t,'DLA_CPI',-.25); b[row]=0;
+    row=idx(t,'L_CPI_RW'); set(row,t,'L_CPI_RW',1); if(t>0)set(row,t-1,'L_CPI_RW',-1); b[row]=DCPIRW[t]/4;
+    row=idx(t,'L_Z'); set(row,t,'L_Z',1);set(row,t,'L_S',-1);set(row,t,'L_CPI',1);set(row,t,'L_CPI_RW',-1); b[row]=0;
+    row=idx(t,'RMC'); set(row,t,'RMC',1);set(row,t,'L_GDP_GAP',-a3);set(row,t,'L_Z',-(1-a3)); b[row]=0;
+    row=idx(t,'DLA_CPI'); set(row,t,'DLA_CPI',1);
+    if(t>0)set(row,t-1,'DLA_CPI',-a1); if(t<n-1)set(row,t+1,'DLA_CPI',-(1-a1));
+    set(row,t,'RMC',-a2); b[row]=SD[t];
+    row=idx(t,'D4L_CPI'); set(row,t,'D4L_CPI',1);set(row,t,'L_CPI',-1); if(t>=4)set(row,t-4,'L_CPI',1); b[row]=0;
+    row=idx(t,'RR'); set(row,t,'RR',1);set(row,t,'RS',-1); if(t<n-1)set(row,t+1,'D4L_CPI',1); b[row]=0;
+    row=idx(t,'MCI'); set(row,t,'MCI',1);set(row,t,'RR',-b4);set(row,t,'L_Z',(1-b4)); b[row]=0;
+    row=idx(t,'L_GDP_GAP'); set(row,t,'L_GDP_GAP',1); if(t>0)set(row,t-1,'L_GDP_GAP',-b1); set(row,t,'MCI',b2); b[row]=SG[t]+b3*RW[t];
+    row=idx(t,'RS'); set(row,t,'RS',1); if(t>0)set(row,t-1,'RS',-g1); set(row,t,'D4L_CPI',-(1-g1)*g2);set(row,t,'L_GDP_GAP',-(1-g1)*g3); b[row]=SR[t];
+    row=idx(t,'L_S'); set(row,t,'L_S',1); if(t<n-1)set(row,t+1,'L_S',-1); set(row,t,'RS',.25); b[row]=e1*PR[t]+RSRW[t]/4;
+  }
+  const sol=gaussSolve(A,b);
+  return Array.from({length:n},(_,t)=>{
+    const r={t};
+    VARS.forEach(v=>r[v]=sol[idx(t,v)]);
+    r.L_GDP_RW_GAP=RW[t]; r.RS_RW=RSRW[t]; r.D4L_CPI_RW=DCPIRW[t];
+    r.DIFF_RS=r.RS-r.RS_RW; r.L_Z_GAP=r.L_Z;
+    r.CPI_GAP=r.D4L_CPI-D4L_TAR;
+    r.MCI_RR=b4*r.RR; r.MCI_LZ=(1-b4)*(-r.L_Z_GAP);
+    return r;
+  });
+}
+
+// ─── Monte Carlo: trayectorias con incertidumbre real del posterior MCMC ─────
+// PENDIENTE (2026-07-15): POSTERIOR_DRAWS todavía tiene solo 3 columnas de rho/stderr
+// (RW/RS_RW/D4L_CPI_RW). Esta función NO inyecta ruido MC a PREM todavía -- usa el
+// rhoPrem fijo del slider (vía default de solve()) sin incertidumbre de parámetro ni
+// de shock para esa serie. Cuando vuelva el oo_ con rho_prem/stderr_eps_prem, hay que
+// (a) agregar esas dos columnas a cada fila de POSTERIOR_DRAWS, (b) desestructurar
+// rhoPrem/sdPrem acá abajo, (c) armar noisePrem igual que noiseGdp/noiseRs/noiseCpi
+// (respetando el mismo corte de noiseLimitN), y (d) pasar rhoPrem y {..., prem:noisePrem}
+// en la llamada a solve() de más abajo.
+function monteCarloTrayectorias(shockType, shockSize, horizon, cal, nDraws, noiseLimitN){
+  const n = horizon+1;
+  const keys = ['L_GDP_GAP','CPI_GAP','MCI','RS'];
+  const paths = {}; keys.forEach(k=>paths[k]=[]);
+  const step = Math.max(1, Math.floor(POSTERIOR_DRAWS.length/nDraws));
+  for(let i=0; i<POSTERIOR_DRAWS.length && paths.L_GDP_GAP.length<nDraws; i+=step){
+    const [rhoRw,rhoRs,rhoCpi,sdGdp,sdRs,sdCpi] = POSTERIOR_DRAWS[i];
+    const noiseGdp=new Array(n).fill(0), noiseRs=new Array(n).fill(0), noiseCpi=new Array(n).fill(0);
+    for(let t=1;t<n;t++){ // t=0 se deja sin ruido: el impulso inicial lo define el shock elegido, no el MC
+      if(noiseLimitN && t>noiseLimitN) continue; // sin ruido nuevo pasado el límite; lo ya inyectado se propaga vía rho
+      noiseGdp[t]=sdGdp*randNormal();
+      noiseRs[t]=sdRs*randNormal();
+      noiseCpi[t]=sdCpi*randNormal();
+    }
+    const r = solve(shockType, shockSize, horizon, rhoRw, rhoRs, rhoCpi, cal, {gdp:noiseGdp, rs:noiseRs, cpi:noiseCpi});
+    keys.forEach(k=>paths[k].push(r.map(row=>row[k])));
+  }
+  const bands = {};
+  keys.forEach(k=>{
+    bands[k] = [];
+    for(let t=0;t<n;t++){
+      const vals = paths[k].map(p=>p[t]).sort((a,b)=>a-b);
+      const q = (p)=>vals[Math.min(vals.length-1, Math.floor(p*(vals.length-1)))];
+      bands[k].push({t, p10:q(0.10), p50:q(0.50), p90:q(0.90)});
+    }
+  });
+  return bands;
+}
+
+// ─── SVG helper ─────────────────────────────────────────────────────────────
+
+function svgLine(data, key, color, svgEl, vb, refZero=true){
+  const [W,H] = vb||[400,150];
+  const pL=36,pR=6,pT=6,pB=18;
+  const vals=data.map(d=>d[key]).filter(v=>v!==null&&v!==undefined&&!isNaN(v));
+  if(!vals.length){svgEl.innerHTML='';return;}
+  let mn=Math.min(...vals,refZero?0:Infinity), mx=Math.max(...vals,refZero?0:-Infinity);
+  if(mn===mx){mn-=0.1;mx+=0.1;}
+  const xp=i=>pL+(i/(data.length-1||1))*(W-pL-pR);
+  const yp=v=>pT+(1-(v-mn)/(mx-mn))*(H-pT-pB);
+  const pts=data.map((d,i)=>`${xp(i).toFixed(1)},${yp(d[key]??0).toFixed(1)}`).join(' ');
+  const z0=yp(0).toFixed(1);
+  const tks=[mx,(mx+mn)/2,mn].map(v=>r(v,2));
+  svgEl.innerHTML=`
+    <line x1="${pL}" y1="${z0}" x2="${W-pR}" y2="${z0}" stroke="#2a3040" stroke-width="1"/>
+    <text x="2" y="${pT+8}" fill="#6b7684" font-size="9">${tks[0]}</text>
+    <text x="2" y="${pT+(H-pT-pB)/2}" fill="#6b7684" font-size="9">${tks[1]}</text>
+    <text x="2" y="${H-pB+4}" fill="#6b7684" font-size="9">${tks[2]}</text>
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"/>`;
+}
+
+function svgMulti(data, series, svgEl, vb){
+  const [W,H]=vb||[400,150];
+  const pL=36,pR=6,pT=6,pB=18;
+  const allVals=series.flatMap(s=>data.map(d=>d[s.key]).filter(v=>v!==null&&!isNaN(v)));
+  if(!allVals.length){svgEl.innerHTML='';return;}
+  let mn=Math.min(...allVals,0), mx=Math.max(...allVals,0);
+  if(mn===mx){mn-=0.1;mx+=0.1;}
+  const xp=i=>pL+(i/(data.length-1||1))*(W-pL-pR);
+  const yp=v=>pT+(1-(v-mn)/(mx-mn))*(H-pT-pB);
+  const z0=yp(0).toFixed(1);
+  let html=`<line x1="${pL}" y1="${z0}" x2="${W-pR}" y2="${z0}" stroke="#2a3040" stroke-width="1"/>
+    <text x="2" y="${pT+8}" fill="#6b7684" font-size="9">${r(mx,2)}</text>
+    <text x="2" y="${H-pB+4}" fill="#6b7684" font-size="9">${r(mn,2)}</text>`;
+  series.forEach(s=>{
+    const pts=data.map((d,i)=>`${xp(i).toFixed(1)},${yp(d[s.key]??0).toFixed(1)}`).join(' ');
+    html+=`<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.w||1.8}" stroke-dasharray="${s.dash||''}"/>`;
+  });
+  svgEl.innerHTML=html;
+}
+
+// Banda de percentiles (fan chart): area sombreada p10-p90 + linea de mediana
+function svgFan(bandData, color, svgEl, vb){
+  const [W,H]=vb||[300,140];
+  const pL=36,pR=6,pT=6,pB=18;
+  const allVals=bandData.flatMap(d=>[d.p10,d.p90]).filter(v=>v!==null&&!isNaN(v));
+  if(!allVals.length){svgEl.innerHTML='';return;}
+  let mn=Math.min(...allVals,0), mx=Math.max(...allVals,0);
+  if(mn===mx){mn-=0.1;mx+=0.1;}
+  const xp=i=>pL+(i/(bandData.length-1||1))*(W-pL-pR);
+  const yp=v=>pT+(1-(v-mn)/(mx-mn))*(H-pT-pB);
+  const z0=yp(0).toFixed(1);
+  const topPts=bandData.map((d,i)=>`${xp(i).toFixed(1)},${yp(d.p90).toFixed(1)}`);
+  const botPts=bandData.slice().reverse().map((d,i)=>`${xp(bandData.length-1-i).toFixed(1)},${yp(d.p10).toFixed(1)}`);
+  const areaPts=[...topPts,...botPts].join(' ');
+  const medPts=bandData.map((d,i)=>`${xp(i).toFixed(1)},${yp(d.p50).toFixed(1)}`).join(' ');
+  svgEl.innerHTML=`
+    <line x1="${pL}" y1="${z0}" x2="${W-pR}" y2="${z0}" stroke="#2a3040" stroke-width="1"/>
+    <text x="2" y="${pT+8}" fill="#6b7684" font-size="9">${r(mx,2)}</text>
+    <text x="2" y="${H-pB+4}" fill="#6b7684" font-size="9">${r(mn,2)}</text>
+    <polygon points="${areaPts}" fill="${color}" opacity="0.18" stroke="none"/>
+    <polyline points="${medPts}" fill="none" stroke="${color}" stroke-width="2"/>`;
+}
+
+function svgBars(data, keys, colors, svgEl, vb){
+  const [W,H]=vb||[800,160];
+  const pL=36,pR=6,pT=6,pB=18;
+  const allVals=data.flatMap(d=>keys.map(k=>d[k]||0));
+  let mn=Math.min(...allVals,0), mx=Math.max(...allVals,0);
+  if(mn===mx){mn-=0.1;mx+=0.1;}
+  const yp=v=>pT+(1-(v-mn)/(mx-mn))*(H-pT-pB);
+  const z0=yp(0);
+  const bw=(W-pL-pR)/data.length*0.8;
+  const bx=i=>pL+(i+0.5)*(W-pL-pR)/data.length - bw/2;
+  let html=`<line x1="${pL}" y1="${z0.toFixed(1)}" x2="${W-pR}" y2="${z0.toFixed(1)}" stroke="#2a3040" stroke-width="1"/>
+    <text x="2" y="${pT+8}" fill="#6b7684" font-size="9">${r(mx,2)}</text>
+    <text x="2" y="${H-pB+4}" fill="#6b7684" font-size="9">${r(mn,2)}</text>`;
+  data.forEach((d,i)=>{
+    let base=z0;
+    keys.forEach((k,ki)=>{
+      const v=d[k]||0, yt=yp(v), h=Math.abs(yt-z0);
+      const y=v>=0?yt:z0;
+      if(v>=0) html+=`<rect x="${(bx(i)).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${colors[ki]}" opacity="0.85"/>`;
+      else html+=`<rect x="${(bx(i)).toFixed(1)}" y="${z0.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${colors[ki]}" opacity="0.85"/>`;
+    });
+    if(i%4===0)html+=`<text x="${(bx(i)+bw/2).toFixed(1)}" y="${H-4}" fill="#6b7684" font-size="9" text-anchor="middle">${d.t}</text>`;
+  });
+  svgEl.innerHTML=html;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function r(v,d=3){if(v===null||v===undefined||isNaN(v))return '—';const f=Math.pow(10,d);return Math.round((v+Number.EPSILON)*f)/f;}
+
+// ─── Capa de interpretación de política ────────────────────────────────────
+// Integrado desde interpretacionPolitica.js (construido y probado standalone
+// en sesiones anteriores). Se embebe acá tal cual, sin los `export`, porque
+// el resto del dashboard sigue el patrón de archivo único autocontenido —
+// no se sirve como módulo aparte para no depender de que el archivo se abra
+// vía Flask en vez de file://. El archivo interpretacionPolitica.js se
+// mantiene aparte solo como fuente versionable/testeable con Node.
+
+const REFERENCIAS = {
+  outputGap:  0.0,
+  inflacion:  D4L_TAR,  // usa la meta real del dashboard (2.0), no un valor hardcodeado aparte
+  tasaPolitica: 2.5,
+  tasaReal:   2.5 - D4L_TAR,
+  mci:        0.0,
+};
+
+// Bandas idénticas a los umbrales reales del semáforo (METRICS de render()).
+const BANDAS = {
+  outputGap: { alerta: 0.3, critico: 1.0 },
+  inflacion: { alerta: 0.3, critico: 1.0 },
+  mci:       { alerta: 0.3, critico: 0.8 },
+  tasaReal:  { alerta: 0.5, critico: 1.5 },  // sin equivalente en el semáforo real, criterio propio
+};
+
+function clasificar(valor, referencia, banda) {
+  const gap = valor - referencia;
+  const abs = Math.abs(gap);
+  const severidad = abs <= banda.alerta ? 'normal' : (abs <= banda.critico ? 'alerta' : 'critico');
+  const estado = abs <= banda.alerta ? 'neutral' : (gap > 0 ? 'alto' : 'bajo');
+  const color = severidad === 'normal' ? 'verde' : (severidad === 'alerta' ? 'amarillo' : 'rojo');
+  return { estado, gap, severidad, color };
+}
+
+function construirEstado(snapshot) {
+  const outputGap = clasificar(snapshot.L_GDP_GAP, REFERENCIAS.outputGap, BANDAS.outputGap);
+  const inflacion = clasificar(snapshot.D4L_CPI, REFERENCIAS.inflacion, BANDAS.inflacion);
+  const tasaReal = clasificar(snapshot.RR, REFERENCIAS.tasaReal, BANDAS.tasaReal);
+  const mci = clasificar(snapshot.MCI, REFERENCIAS.mci, BANDAS.mci);
+  return { outputGap, inflacion, tasaReal, mci, shockType: snapshot.shockType, shockMeta: snapshot.shockMeta };
+}
+
+const MATRIZ_DIAGNOSTICO = {
+  'alto|alto': { resumen: 'Economía recalentada con presión inflacionaria al alza', riesgo: 'La combinación de exceso de demanda e inflación por encima de la meta típicamente exige una respuesta contractiva; postergarla suele elevar el costo de desinflación futuro.', sesgo: 'contractivo' },
+  'alto|neutral': { resumen: 'Producto por encima del potencial con inflación aún contenida', riesgo: 'La brecha positiva sin traslado inflacionario pleno puede reflejar rezagos de la curva de Phillips; vale monitorear si la presión se traslada a precios en los próximos trimestres.', sesgo: 'levemente contractivo' },
+  'alto|bajo': { resumen: 'Producto por encima del potencial pero inflación por debajo de la meta', riesgo: 'Combinación poco común — puede señalar un shock de oferta positivo (mejora de productividad o términos de intercambio) más que exceso de demanda genuino.', sesgo: 'neutral, con seguimiento del origen del shock' },
+  'neutral|alto': { resumen: 'Producto en línea con el potencial pero inflación por encima de la meta', riesgo: 'Sin holgura de demanda que explique la inflación, el origen es probablemente de costos o expectativas — la respuesta de tasa por sí sola puede ser menos efectiva y más costosa en términos de actividad.', sesgo: 'contractivo, evaluando la persistencia del shock' },
+  'neutral|neutral': { resumen: 'Economía cerca de su equilibrio de largo plazo', riesgo: 'Escenario de "coincidencia divina": brecha de producto y de inflación simultáneamente controladas. El principal riesgo es de política, no de fundamentos: cambios de tasa en este punto pueden desanclar innecesariamente las expectativas.', sesgo: 'neutral' },
+  'neutral|bajo': { resumen: 'Producto en línea con el potencial pero inflación por debajo de la meta', riesgo: 'Inflación baja sin holgura real de por medio sugiere expectativas ancladas a la baja o un shock desinflacionario transitorio (ej. términos de intercambio, tipo de cambio).', sesgo: 'levemente expansivo' },
+  'bajo|alto': { resumen: 'Producto por debajo del potencial con inflación por encima de la meta', riesgo: 'El escenario más difícil para la autoridad monetaria — estanflación. La regla de Taylor estándar no da una respuesta única; requiere ponderar explícitamente el trade-off entre actividad e inflación.', sesgo: 'ambiguo, requiere juicio de política explícito' },
+  'bajo|neutral': { resumen: 'Producto por debajo del potencial con inflación aún en meta', riesgo: 'Holgura de demanda sin presión inflacionaria dejaría espacio para una respuesta expansiva sin poner en riesgo la meta, si el shock que originó la brecha no es de oferta.', sesgo: 'expansivo' },
+  'bajo|bajo': { resumen: 'Economía con holgura de demanda e inflación por debajo de la meta', riesgo: 'Cuadro clásico de brecha recesiva — ambos indicadores apuntan en la misma dirección, lo que da mayor confianza a una respuesta expansiva que en los cuadros mixtos.', sesgo: 'expansivo' },
+};
+
+function evaluarConsistencia(estado, sesgoSugerido) {
+  const tasaContractiva = estado.tasaReal.estado === 'alto';
+  const tasaExpansiva = estado.tasaReal.estado === 'bajo';
+  const sesgoEsContractivo = sesgoSugerido.includes('contractivo');
+  const sesgoEsExpansivo = sesgoSugerido.includes('expansivo');
+  if (sesgoEsContractivo && tasaExpansiva) return 'La tasa real vigente está por debajo de la neutral, en sentido contrario al sesgo contractivo que sugiere el diagnóstico — el mecanismo de transmisión podría no estar operando con la fuerza necesaria.';
+  if (sesgoEsExpansivo && tasaContractiva) return 'La tasa real vigente está por encima de la neutral, más restrictiva de lo que el diagnóstico sugeriría — hay espacio para relajar condiciones sin abandonar el ancla nominal.';
+  if (sesgoEsContractivo && tasaContractiva) return 'La tasa real ya se encuentra en terreno contractivo, en línea con el diagnóstico — la pregunta relevante es de magnitud y persistencia, no de dirección.';
+  if (sesgoEsExpansivo && tasaExpansiva) return 'La tasa real ya se encuentra en terreno expansivo, en línea con el diagnóstico.';
+  return 'La tasa real está cerca de su nivel neutral, sin sesgo claro desde la política monetaria vigente.';
+}
+
+const CONTEXTO_SHOCK = {
+  domestico_demanda: 'El origen es un shock de demanda agregada doméstica (IS curve) — la respuesta convencional de tasas suele ser la más directa.',
+  domestico_precios: 'El origen es un shock de precios domésticos (Phillips curve, costos) — la política monetaria enfrenta un trade-off más costoso entre estabilizar precios y sostener actividad.',
+  domestico_politica_monetaria: 'El origen es un shock a la propia regla de Taylor — vale distinguir si la brecha resultante es una desviación deliberada de la regla o un desvío no deseado.',
+  domestico_tipo_cambio: 'El origen es un shock al premio de riesgo / tipo de cambio (UIP) — afecta precios domésticos vía el pass-through cambiario antes que por exceso de demanda.',
+  externo_demanda_externa: 'El origen es un shock de actividad externa (canal b3, AR(1) L_GDP_RW_GAP) — se transmite a la demanda doméstica por el canal comercial más que por precios.',
+  externo_tasa_externa: 'El origen es un shock de tasa de interés externa (AR(1) RS_RW vía UIP) — se transmite al tipo de cambio y de ahí a precios domésticos; la respuesta óptima depende del régimen cambiario.',
+  externo_precios_externos: 'El origen es un shock de precios externos (AR(1) D4L_CPI_RW vía L_CPI_RW) — se transmite principalmente vía tipo de cambio real e inflación importada.',
+  externo_rw_combinado: 'El origen es un shock combinado de las tres series del bloque externo (RW) simultáneamente — la lectura individual de canales pierde relevancia frente al efecto conjunto.',
+};
+
+function contextoDeShock(shockType, shockMeta) {
+  const grupo = shockMeta?.group === 'Externo' ? 'externo' : 'domestico';
+  const clave = `${grupo}_${shockType}`;
+  return CONTEXTO_SHOCK[clave] || `Shock de tipo "${shockType}" (${shockMeta?.label || shockMeta?.group || 'sin clasificar'}).`;
+}
+
+function interpretarDiagnostico(snapshot) {
+  const estado = construirEstado(snapshot);
+  const clave = `${estado.outputGap.estado}|${estado.inflacion.estado}`;
+  const diagnostico = MATRIZ_DIAGNOSTICO[clave];
+  const consistencia = evaluarConsistencia(estado, diagnostico.sesgo);
+  const contexto = contextoDeShock(estado.shockType, estado.shockMeta);
+  const rank = { normal: 0, alerta: 1, critico: 2 };
+  const etiqueta = { normal: 'Normal', alerta: 'Alerta', critico: 'Crítico' };
+  const peorSeveridad = rank[estado.outputGap.severidad] >= rank[estado.inflacion.severidad]
+    ? estado.outputGap.severidad : estado.inflacion.severidad;
+  return {
+    estado, severidad: peorSeveridad, resumen: diagnostico.resumen, riesgo: diagnostico.riesgo,
+    sesgoSugerido: diagnostico.sesgo, consistenciaTasaReal: consistencia, contextoShock: contexto,
+    textoCompleto:
+      `[${etiqueta[peorSeveridad]}] ${diagnostico.resumen} (brecha de producto: ${estado.outputGap.gap.toFixed(2)} pp, ` +
+      `brecha de inflación: ${estado.inflacion.gap.toFixed(2)} pp respecto a la meta de ${REFERENCIAS.inflacion}%). ` +
+      `${diagnostico.riesgo} ${consistencia} ${contexto}`,
+  };
+}
+
+function trafficLight(val,good,warn){
+  const a=Math.abs(val);
+  if(a<=good) return {cls:'semafor-green',lbl:'Normal'};
+  if(a<=warn)  return {cls:'semafor-yellow',lbl:'Alerta'};
+  return {cls:'semafor-red',lbl:'Crítico'};
+}
+
+// ─── Estado global ───────────────────────────────────────────────────────────
+let fredAligned = null;
+
+// ─── Render diagnóstico ──────────────────────────────────────────────────────
+function render(){
+  const shockType = document.getElementById('shockType').value;
+  const shockSize = parseFloat(document.getElementById('shockSize').value);
+  const horizon   = parseInt(document.getElementById('horizon').value);
+  const window_   = parseInt(document.getElementById('window').value);
+  const rhoGdp    = parseFloat(document.getElementById('rhoGdp').value);
+  const rhoRs     = parseFloat(document.getElementById('rhoRs').value);
+  const rhoCpi    = parseFloat(document.getElementById('rhoCpi').value);
+  const rhoPrem   = parseFloat(document.getElementById('rhoPrem').value);
+  const bandKey   = document.getElementById('bandKey').value;
+  const isExt     = ['demanda_externa','tasa_externa','precios_externos','rw_combinado'].includes(shockType);
+
+  document.getElementById('shockSizeLbl').textContent = r(shockSize,1);
+  document.getElementById('rhoGdpLbl').textContent = r(rhoGdp,2);
+  document.getElementById('rhoRsLbl').textContent = r(rhoRs,2);
+  document.getElementById('rhoCpiLbl').textContent = r(rhoCpi,2);
+  document.getElementById('rhoPremLbl').textContent = r(rhoPrem,2);
+  document.getElementById('horizonLbl').textContent = horizon;
+  document.getElementById('windowLbl').textContent = window_;
+
+  const main = solve(shockType, shockSize, horizon, rhoGdp, rhoRs, rhoCpi, calib, null, rhoPrem);
+  const bDelta = 0.15;
+  const cLo  = {...calib, [bandKey]:Math.max(0.05, calib[bandKey]-bDelta)};
+  const cHi  = {...calib, [bandKey]:Math.min(0.99, calib[bandKey]+bDelta)};
+  const lo   = solve(shockType, shockSize, horizon, rhoGdp, rhoRs, rhoCpi, cLo, null, rhoPrem);
+  const hi   = solve(shockType, shockSize, horizon, rhoGdp, rhoRs, rhoCpi, cHi, null, rhoPrem);
+  const wnd  = main.slice(0, Math.min(window_, main.length));
+  const wlo  = lo.slice(0, Math.min(window_, lo.length));
+  const whi  = hi.slice(0, Math.min(window_, hi.length));
+
+  // Semáforo
+  const METRICS=[
+    {key:'CPI_GAP',  label:'Inflación vs objetivo',good:.3,warn:1.0},
+    {key:'L_GDP_GAP',label:'Brecha de producto',   good:.3,warn:1.0},
+    {key:'MCI',      label:'Condiciones monetarias',good:.3,warn:.8},
+  ];
+  const HORIZONS=[{t:1,lbl:'Impacto (t=1)'},{t:4,lbl:'Mediano (t=4)'},{t:8,lbl:'Largo (t=8)'}];
+  document.getElementById('semaforBody').innerHTML = METRICS.map(m=>`
+    <tr>
+      <td style="text-align:left;color:#8a96a3">${m.label}</td>
+      ${HORIZONS.map(h=>{
+        const val=main[Math.min(h.t,main.length-1)]?.[m.key]??0;
+        const tl=trafficLight(val,m.good,m.warn);
+        return `<td><span class="${tl.cls}">● ${r(val,3)} <small>${tl.lbl}</small></span></td>`;
+      }).join('')}
+    </tr>`).join('');
+
+  // Interpretación automática de política (t=0, snapshot de impacto)
+  const shockSelect = document.getElementById('shockType');
+  const shockLabel = shockSelect.options[shockSelect.selectedIndex].text;
+  const snap = main[0] || {};
+  const interp = interpretarDiagnostico({
+    L_GDP_GAP: snap.L_GDP_GAP, D4L_CPI: snap.D4L_CPI, RS: snap.RS, RR: snap.RR, MCI: snap.MCI,
+    shockType, shockMeta: { group: isExt ? 'Externo' : 'Doméstico', label: shockLabel },
+  });
+  const sevCls = interp.severidad==='normal' ? 'semafor-green' : (interp.severidad==='alerta' ? 'semafor-yellow' : 'semafor-red');
+  document.getElementById('interpretacionTexto').innerHTML =
+    `<span class="${sevCls}" style="font-weight:600">●</span> ${interp.textoCompleto}`;
+  document.getElementById('interpretacionDesglose').textContent =
+    `Sesgo sugerido: ${interp.sesgoSugerido} · Shock: ${shockLabel}`;
+
+  // UIP
+  const d0=main[0]||{}, d1=main[1]||{};
+  document.getElementById('uipInstance').innerHTML =
+    `t=0: <span style="color:#5dcaa5">${r(d0.L_S,4)}</span> = ` +
+    `<span style="color:#5dcaa5">${r(d1.L_S,4)}</span> − ` +
+    `(<span style="color:#9a8ee0">${r(d0.RS,4)}</span> − ` +
+    `<span style="color:#c1547e">${r(d0.RS_RW,4)}</span>) / 4`;
+  svgMulti(wnd,[
+    {key:'RS',color:'#9a8ee0'},{key:'RS_RW',color:'#c1547e'},{key:'DIFF_RS',color:'#e0c050',dash:'4 2'}
+  ],document.getElementById('uipChart1'),[400,150]);
+
+  // Trayectorias con incertidumbre MCMC (opt-in, recalcula solo si esta activo)
+  const mcEnabled = document.getElementById('mcEnabled').checked;
+  const mcN = parseInt(document.getElementById('mcN').value);
+  const mcHorizon = parseInt(document.getElementById('mcHorizon').value);
+  document.getElementById('mcNLbl').textContent = mcN;
+  document.getElementById('mcNFoot').textContent = mcN;
+  document.getElementById('mcHorizonLbl').textContent = mcHorizon;
+  const mcNoiseLimitEnabled = document.getElementById('mcNoiseLimitEnabled').checked;
+  const mcNoiseLimitN = parseInt(document.getElementById('mcNoiseLimitN').value);
+  document.getElementById('mcNoiseLimitNLbl').textContent = mcNoiseLimitN;
+  document.getElementById('mcNoiseLimitN').disabled = !mcNoiseLimitEnabled;
+  if(mcEnabled){
+    const mcBands = monteCarloTrayectorias(shockType, shockSize, mcHorizon, calib, mcN, mcNoiseLimitEnabled?mcNoiseLimitN:null);
+    svgFan(mcBands.L_GDP_GAP, '#378ADD', document.getElementById('mc_L_GDP_GAP'), [300,140]);
+    svgFan(mcBands.CPI_GAP,   '#D4537E', document.getElementById('mc_CPI_GAP'),   [300,140]);
+    svgFan(mcBands.MCI,       '#1D9E75', document.getElementById('mc_MCI'),       [300,140]);
+    svgFan(mcBands.RS,        '#7F77DD', document.getElementById('mc_RS'),        [300,140]);
+  } else {
+    ['mc_L_GDP_GAP','mc_CPI_GAP','mc_MCI','mc_RS'].forEach(id=>{
+      document.getElementById(id).innerHTML =
+        '<text x="150" y="70" fill="#6b7684" font-size="11" text-anchor="middle">Activar arriba para calcular</text>';
+    });
+  }
+  svgMulti(wnd,[
+    {key:'L_S',color:'#5dcaa5'},{key:'L_Z_GAP',color:'#8fc24a',dash:'4 2'}
+  ],document.getElementById('uipChart2'),[400,150]);
+
+  // IRFs con bandas
+  const IRF_EXT=[
+    {key:'L_GDP_GAP',label:'Brecha de producto',      color:'#378ADD'},
+    {key:'L_Z_GAP',  label:'Brecha TC real (L_Z_GAP)',color:'#8fc24a'},
+    {key:'CPI_GAP',  label:'Inflación vs objetivo',   color:'#D4537E'},
+    {key:'RS',       label:'Tasa de política',         color:'#7F77DD'},
+  ];
+  const IRF_DOM=[
+    {key:'L_GDP_GAP',label:'Brecha de producto',      color:'#378ADD'},
+    {key:'RR',       label:'Tasa real (Fisher)',       color:'#888780'},
+    {key:'L_Z_GAP',  label:'Brecha TC real (L_Z_GAP)',color:'#8fc24a'},
+    {key:'CPI_GAP',  label:'Inflación vs objetivo',   color:'#D4537E'},
+  ];
+  const irf_series = isExt ? IRF_EXT : IRF_DOM;
+  document.getElementById('irfTitle').textContent =
+    `IRFs con bandas de sensibilidad (±${bDelta} en ${bandKey})`;
+  document.getElementById('irfGrid').innerHTML = irf_series.map(s=>`
+    <div class="card">
+      <div style="font-size:12px;color:#8a96a3;margin-bottom:4px">${s.label}</div>
+      <svg class="chart" height="140" id="irf_${s.key}" viewBox="0 0 300 140"></svg>
+    </div>`).join('');
+  irf_series.forEach(s=>{
+    const el=document.getElementById('irf_'+s.key);
+    const merged=wnd.map((d,i)=>({
+      t:d.t, val:d[s.key], lo:wlo[i]?.[s.key]??d[s.key], hi:whi[i]?.[s.key]??d[s.key]
+    }));
+    svgMulti(merged,[
+      {key:'hi',color:s.color,w:1,dash:'3 2'},{key:'lo',color:s.color,w:1,dash:'3 2'},{key:'val',color:s.color,w:2}
+    ],el,[300,140]);
+  });
+
+  // MCI descomposición
+  svgBars(wnd,['MCI_RR','MCI_LZ'],['#7F77DD','#1D9E75'],
+    document.getElementById('mciDecomp'),[800,160]);
+}
+
+// ─── Calibración ─────────────────────────────────────────────────────────────
+function buildCalibSliders(){
+  document.getElementById('calibSliders').innerHTML = PARAM_META.map(p=>`
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <span style="color:#8a96a3">${p.label}</span>
+        <span class="mono" id="cv_${p.key}">${r(calib[p.key],2)}</span>
+      </div>
+      <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${calib[p.key]}"
+        oninput="updateCalib('${p.key}',this.value)">
+    </div>`).join('');
+}
+
+function updateCalib(key,val){
+  calib[key]=parseFloat(val);
+  document.getElementById('cv_'+key).textContent=r(calib[key],2);
+  render();
+}
+function resetCalib(){calib={...CALIB_DEFAULT};buildCalibSliders();render();}
+let calibVisible=false;
+function toggleCalib(){
+  calibVisible=!calibVisible;
+  document.getElementById('calibPanel').style.display=calibVisible?'block':'none';
+  if(calibVisible) buildCalibSliders();
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+function switchTab(tab){
+  document.getElementById('tab-diagnostico').style.display=tab==='diagnostico'?'block':'none';
+  document.getElementById('tab-fred').style.display=tab==='fred'?'block':'none';
+  document.querySelectorAll('.tab').forEach((el,i)=>
+    el.classList.toggle('active',(i===0&&tab==='diagnostico')||(i===1&&tab==='fred')));
+}
+
+// ─── FRED ────────────────────────────────────────────────────────────────────
+// Antes: "https://api.stlouisfed.org/fred/series/observations" directo (bloqueado por CORS).
+// Ahora: proxy local (servidor.py) que reenvia la request server-side.
+const FRED_BASE='/api/fred';
+
+async function fetchFRED(seriesId,apiKey,startDate){
+  const url=`${FRED_BASE}/${seriesId}?api_key=${apiKey}&file_type=json`+
+    `&observation_start=${startDate}&frequency=q&aggregation_method=avg`;
+  const resp=await fetch(url);
+  if(!resp.ok){
+    let detail='';
+    try{ detail=(await resp.json()).error||''; }catch(_){}
+    throw new Error(`FRED ${seriesId}: HTTP ${resp.status}${detail?' — '+detail:''}. ¿Está corriendo start.bat?`);
+  }
+  const json=await resp.json();
+  if(json.error_message) throw new Error(`FRED ${seriesId}: ${json.error_message}`);
+  return json.observations.filter(o=>o.value!=='.').map(o=>({date:o.date,value:parseFloat(o.value)}));
+}
+
+function transformSeries(obs){
+  const dates=obs.map(o=>o.date), vals=obs.map(o=>o.value);
+  const L=vals.map(v=>100*Math.log(v));
+  const DLA=L.map((v,i)=>i===0?null:4*(v-L[i-1]));
+  const D4L=L.map((v,i)=>i<4?null:v-L[i-4]);
+  const BAR=L.map((v,i)=>{if(i<7)return null;return L.slice(i-7,i+1).reduce((a,b)=>a+b,0)/8;});
+  const GAP=L.map((v,i)=>BAR[i]===null?null:v-BAR[i]);
+  return dates.map((date,i)=>({date,value:vals[i],L:L[i],DLA:DLA[i],D4L:D4L[i],BAR:BAR[i],GAP:GAP[i]}));
+}
+
+function alignSeries(gdp,rate,cpi,prem){
+  const gm=Object.fromEntries(gdp.map(r=>[r.date,r]));
+  const rm=Object.fromEntries(rate.map(r=>[r.date,r]));
+  const cm=Object.fromEntries(cpi.map(r=>[r.date,r]));
+  // PREM (BAA10Y) es opcional: si no se pasa, alignSeries se comporta exactamente
+  // como antes (retrocompatible) para no romper otros llamadores existentes.
+  const pm=prem?Object.fromEntries(prem.map(r=>[r.date,r])):null;
+  return gdp.map((g,i)=>({date:g.date,i}))
+    .filter(({date})=>rm[date]&&cm[date]&&(!pm||pm[date]))
+    .map(({date,i})=>({
+      t:i, date,
+      L_GDP_RW_GAP: gm[date].GAP,
+      RS_RW:        rm[date].value,
+      D4L_CPI_RW:   cm[date].D4L,
+      // BAA10Y ya es un spread en puntos porcentuales -- mismo tratamiento que RS_RW
+      // (nivel directo, sin log ni diferencia): no tiene sentido tomarle log a un spread.
+      PREM:         pm ? pm[date].value : null,
+    }))
+    .filter(r=>r.L_GDP_RW_GAP!==null&&r.RS_RW!==null&&r.D4L_CPI_RW!==null&&(!pm||r.PREM!==null));
+}
+
+function descStats(aligned, key){
+  const vals=aligned.map(r=>r[key]).filter(v=>v!==null&&!isNaN(v));
+  if(!vals.length) return {};
+  const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+  const std=Math.sqrt(vals.map(v=>(v-mean)**2).reduce((a,b)=>a+b,0)/vals.length);
+  return {n:vals.length, mean, std, min:Math.min(...vals), max:Math.max(...vals)};
+}
+
+async function loadFRED(){
+  const apiKey=document.getElementById('fredKey').value.trim();
+  const startDate=document.getElementById('fredStart').value;
+  if(!apiKey){document.getElementById('fredError').textContent='Ingresá tu API key de FRED.';document.getElementById('fredError').style.display='block';return;}
+  document.getElementById('fredError').style.display='none';
+  document.getElementById('fredLoading').style.display='block';
+  document.getElementById('fredResults').style.display='none';
+  document.getElementById('fredEmpty').style.display='none';
+  document.getElementById('fredBtn').disabled=true;
+  try{
+    const [gdpObs,rateObs,cpiObs,premObs]=await Promise.all([
+      fetchFRED('GDPC1',apiKey,startDate),
+      fetchFRED('FEDFUNDS',apiKey,startDate),
+      fetchFRED('CPIAUCSL',apiKey,startDate),
+      fetchFRED('BAA10Y',apiKey,startDate),
+    ]);
+    const gdpT=transformSeries(gdpObs);
+    const rateT=transformSeries(rateObs);
+    const cpiT=transformSeries(cpiObs);
+    const premT=transformSeries(premObs);
+    fredAligned=alignSeries(gdpT,rateT,cpiT,premT);
+
+    document.getElementById('gdpMeta').textContent=`${gdpT.length} trim. · último: ${gdpT[gdpT.length-1]?.date}`;
+    document.getElementById('rateMeta').textContent=`${rateT.length} trim. · último: ${rateT[rateT.length-1]?.date}`;
+    document.getElementById('cpiMeta').textContent=`${cpiT.length} trim. · último: ${cpiT[cpiT.length-1]?.date}`;
+    document.getElementById('premMeta').textContent=`${premT.length} trim. · último: ${premT[premT.length-1]?.date}`;
+
+    // Gráficos
+    svgLine(gdpT.filter(d=>d.GAP!==null),'GAP','#378ADD',document.getElementById('fredChart1'),[350,130]);
+    svgLine(rateT.filter(d=>d.value!==null),'value','#9a8ee0',document.getElementById('fredChart2'),[350,130]);
+    svgLine(cpiT.filter(d=>d.D4L!==null),'D4L','#D4537E',document.getElementById('fredChart3'),[350,130]);
+    svgLine(premT.filter(d=>d.value!==null),'value','#c1547e',document.getElementById('fredChart4'),[350,130]);
+
+    // Stats
+    const FKEYS=[{key:'L_GDP_RW_GAP',label:'L_GDP_RW_GAP',color:'#378ADD'},{key:'RS_RW',label:'RS_RW (nivel)',color:'#9a8ee0'},{key:'D4L_CPI_RW',label:'D4L_CPI_RW',color:'#D4537E'},{key:'PREM',label:'PREM (BAA10Y, nivel)',color:'#c1547e'}];
+    document.getElementById('fredStats').innerHTML=FKEYS.map(fk=>{
+      const s=descStats(fredAligned,fk.key);
+      return `<div class="card">
+        <div style="font-size:12px;color:#8a96a3;margin-bottom:6px"><span class="badge" style="background:${fk.color}"></span>${fk.label}</div>
+        ${[['n obs',s.n],['Media',r(s.mean)],['Std',r(s.std)],['Mín',r(s.min)],['Máx',r(s.max)]].map(([l,v])=>`
+          <div class="stat-row"><span>${l}</span><span>${v}</span></div>`).join('')}
+      </div>`;
+    }).join('');
+
+    // Tabla últimos 8
+    const last8=fredAligned.slice(-8);
+    document.getElementById('fredTable').innerHTML=last8.map(d=>`
+      <tr><td class="mono">${d.date}</td><td class="mono">${r(d.L_GDP_RW_GAP)}</td><td class="mono">${r(d.RS_RW)}</td><td class="mono">${r(d.D4L_CPI_RW)}</td><td class="mono">${r(d.PREM)}</td></tr>`).join('');
+
+    document.getElementById('fredResults').style.display='block';
+  } catch(e){
+    document.getElementById('fredError').textContent=e.message;
+    document.getElementById('fredError').style.display='block';
+    document.getElementById('fredEmpty').style.display='block';
+  } finally{
+    document.getElementById('fredLoading').style.display='none';
+    document.getElementById('fredBtn').disabled=false;
+  }
+}
+
+function exportFRED(){
+  if(!fredAligned) return;
+  const blob=new Blob([JSON.stringify({
+    metadata:{source:'FRED',series:['GDPC1','FEDFUNDS','CPIAUCSL','BAA10Y'],
+      n_quarters:fredAligned.length,
+      generated:new Date().toISOString(),
+      specification_type:'calibrada',data_mode:'real_externo'},
+    external_block:fredAligned,
+  },null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`fred_bloque_externo_${new Date().toISOString().slice(0,7)}.json`;
+  a.click();
+}
+
+function usarEnDiagnostico(){
+  switchTab('diagnostico');
+  // TODO próxima iteración: alimentar el solver con fredAligned como condiciones iniciales
+  alert('Integración con el solver en la próxima iteración. El JSON exportado ya tiene el formato correcto.');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+['shockType','shockSize','horizon','window','rhoGdp','rhoRs','rhoCpi','rhoPrem','bandKey','mcEnabled','mcN','mcHorizon','mcNoiseLimitEnabled','mcNoiseLimitN'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', render);
+  document.getElementById(id).addEventListener('input', render);
+});
+render();
+</script>
+</body></html>
