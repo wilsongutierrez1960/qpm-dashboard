@@ -1,0 +1,29 @@
+# Dynare generated output (per .mod file)
++*/
+*_results
+metropolis/
+graphs/
+latex/
+prior/
+model/
+Output/
+
+# Dynare logs and temp
+*.log
+*_dynare.log
+dynare_map.mat
+
+# MATLAB/Octave binary results
+*.mat
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+
+# Node (por si acaso, AcertiLab u otros)
+node_modules/
